@@ -1,63 +1,104 @@
-const mongoose = require('mongoose');
+const { DataTypes, Model } = require('sequelize');
+const { sequelize } = require('../config/db');
 
-const paymentSchema = new mongoose.Schema(
+class Payment extends Model { }
+
+Payment.init(
     {
-        user: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'User',
-            required: true,
+        id: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            autoIncrement: true,
+            primaryKey: true
         },
+
+        userId: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            allowNull: false
+        },
+
         amount: {
-            type: Number,
-            required: true,
+            type: DataTypes.INTEGER,
+            allowNull: false
         },
+
         type: {
-            type: String,
-            enum: ['registration', 'monthly'],
-            required: true,
+            type: DataTypes.ENUM('registration', 'monthly'),
+            allowNull: false
         },
+
         status: {
-            type: String,
-            enum: ['pending', 'paid', 'failed', 'overdue', 'refunded'],
-            default: 'pending',
+            type: DataTypes.ENUM('pending', 'paid', 'failed', 'overdue', 'refunded'),
+            allowNull: false,
+            defaultValue: 'pending'
         },
+
         paymentMethod: {
-            type: String,
-            enum: ['bkash', 'nagad', 'rocket', 'bank', 'cash', 'sslcommerz'],
+            type: DataTypes.ENUM(
+                'bkash',
+                'nagad',
+                'rocket',
+                'bank',
+                'cash',
+                'sslcommerz'
+            ),
+            allowNull: true
         },
+
         transactionId: {
-            type: String,
+            type: DataTypes.STRING,
+            allowNull: true
         },
+
         month: {
-            type: String,
+            type: DataTypes.STRING,
+            allowNull: true
         },
+
         year: {
-            type: Number,
+            type: DataTypes.INTEGER,
+            allowNull: true
         },
+
         paidAt: {
-            type: Date,
+            type: DataTypes.DATE,
+            allowNull: true
         },
+
         verifiedBy: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'User',
+            type: DataTypes.INTEGER.UNSIGNED,
+            allowNull: true
         },
+
         verifiedAt: {
-            type: Date,
+            type: DataTypes.DATE,
+            allowNull: true
         },
+
         dueDate: {
-            type: Date,
+            type: DataTypes.DATE,
+            allowNull: true
         },
+
         notes: {
-            type: String,
-        },
+            type: DataTypes.TEXT,
+            allowNull: true
+        }
     },
     {
+        sequelize,
+        modelName: 'Payment',
+        tableName: 'payments',
         timestamps: true,
+
+        indexes: [
+            {
+                fields: ['userId', 'type', 'month']
+            },
+            {
+                fields: ['status']
+            }
+        ]
     }
 );
 
-// Index for quick queries
-paymentSchema.index({ user: 1, type: 1, month: 1 });
-paymentSchema.index({ status: 1 });
-
-module.exports = mongoose.model('Payment', paymentSchema);
+module.exports = Payment;

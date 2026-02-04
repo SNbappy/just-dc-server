@@ -1,65 +1,105 @@
-const mongoose = require('mongoose');
+const { DataTypes, Model } = require('sequelize');
+const { sequelize } = require('../config/db');
 
-const memberSchema = new mongoose.Schema(
+class Member extends Model { }
+
+Member.init(
     {
+        id: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            autoIncrement: true,
+            primaryKey: true
+        },
+
         name: {
-            type: String,
-            required: [true, 'Please provide member name'],
-            trim: true,
+            type: DataTypes.STRING,
+            allowNull: false,
+            validate: {
+                notEmpty: { msg: 'Please provide member name' }
+            }
         },
+
         role: {
-            type: String,
-            required: [true, 'Please provide member role'],
-            enum: ['President', 'Vice President', 'General Secretary', 'Treasurer', 'Executive Member', 'Member'],
+            type: DataTypes.ENUM(
+                'President',
+                'Vice President',
+                'General Secretary',
+                'Treasurer',
+                'Executive Member',
+                'Member'
+            ),
+            allowNull: false
         },
+
         department: {
-            type: String,
-            required: [true, 'Please provide department'],
-            trim: true,
+            type: DataTypes.STRING,
+            allowNull: false
         },
+
         batch: {
-            type: String,
-            required: [true, 'Please provide batch'],
-            trim: true,
+            type: DataTypes.STRING,
+            allowNull: false
         },
+
         email: {
-            type: String,
-            trim: true,
-            lowercase: true,
+            type: DataTypes.STRING,
+            allowNull: true,
+            validate: {
+                isEmail: true
+            }
         },
+
         phone: {
-            type: String,
-            trim: true,
+            type: DataTypes.STRING,
+            allowNull: true
         },
+
         image: {
-            type: String,
-            default: '',
+            type: DataTypes.STRING,
+            allowNull: false,
+            defaultValue: ''
         },
+
         bio: {
-            type: String,
-            default: '',
-            maxlength: 500,
+            type: DataTypes.STRING(500),
+            allowNull: false,
+            defaultValue: ''
         },
+
         socialLinks: {
-            facebook: { type: String, default: '' },
-            linkedin: { type: String, default: '' },
-            twitter: { type: String, default: '' },
+            type: DataTypes.JSON,
+            allowNull: false,
+            defaultValue: {
+                facebook: '',
+                linkedin: '',
+                twitter: ''
+            }
         },
+
         isActive: {
-            type: Boolean,
-            default: true,
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: true
         },
+
         priority: {
-            type: Number,
-            default: 0,
-        },
+            type: DataTypes.INTEGER,
+            allowNull: false,
+            defaultValue: 0
+        }
     },
     {
+        sequelize,
+        modelName: 'Member',
+        tableName: 'members',
         timestamps: true,
+
+        indexes: [
+            {
+                fields: ['priority', 'createdAt']
+            }
+        ]
     }
 );
 
-// Index for sorting
-memberSchema.index({ priority: -1, createdAt: -1 });
-
-module.exports = mongoose.model('Member', memberSchema);
+module.exports = Member;

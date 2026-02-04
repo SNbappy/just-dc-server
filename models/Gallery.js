@@ -1,57 +1,71 @@
-const mongoose = require('mongoose');
+const { DataTypes, Model } = require('sequelize');
+const { sequelize } = require('../config/db');
 
-const gallerySchema = new mongoose.Schema(
+class Gallery extends Model { }
+
+Gallery.init(
     {
+        id: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            autoIncrement: true,
+            primaryKey: true
+        },
+
         title: {
-            type: String,
-            required: [true, 'Please provide a title'],
-            trim: true,
+            type: DataTypes.STRING,
+            allowNull: false,
+            validate: {
+                notEmpty: { msg: 'Please provide a title' }
+            }
         },
+
         description: {
-            type: String,
-            default: '',
-            maxlength: 500,
+            type: DataTypes.STRING(500),
+            allowNull: false,
+            defaultValue: ''
         },
-        images: [
-            {
-                url: {
-                    type: String,
-                    required: true,
-                },
-                caption: {
-                    type: String,
-                    default: '',
-                },
-                uploadedAt: {
-                    type: Date,
-                    default: Date.now,
-                },
-            },
-        ],
+
         category: {
-            type: String,
-            enum: ['Event', 'Workshop', 'Competition', 'Meeting', 'Achievement', 'Other'],
-            default: 'Other',
+            type: DataTypes.ENUM(
+                'Event',
+                'Workshop',
+                'Competition',
+                'Meeting',
+                'Achievement',
+                'Other'
+            ),
+            allowNull: false,
+            defaultValue: 'Other'
         },
+
         eventDate: {
-            type: Date,
+            type: DataTypes.DATE,
+            allowNull: true
         },
+
         isPublished: {
-            type: Boolean,
-            default: true,
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: true
         },
+
         createdBy: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'User',
-            required: true,
-        },
+            type: DataTypes.INTEGER.UNSIGNED,
+            allowNull: false
+        }
     },
     {
+        sequelize,
+        modelName: 'Gallery',
+        tableName: 'galleries',
         timestamps: true,
+
+        indexes: [
+            {
+                fields: ['createdAt']
+            }
+        ]
     }
 );
 
-// Index for sorting
-gallerySchema.index({ createdAt: -1 });
-
-module.exports = mongoose.model('Gallery', gallerySchema);
+module.exports = Gallery;
