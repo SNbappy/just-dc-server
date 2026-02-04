@@ -13,42 +13,41 @@ exports.protect = async (req, res, next) => {
             // Verify token
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-            // Get user from token
-            req.user = await User.findById(decoded.id).select('-password');
+            // Get user from token (Sequelize)
+            const user = await User.findByPk(decoded.id);
 
-            if (!req.user) {
+            if (!user) {
                 return res.status(401).json({
                     success: false,
-                    message: 'User not found',
+                    message: 'User not found'
                 });
             }
 
-            next();
+            req.user = user; // password excluded by defaultScope in User model
+            return next();
         } catch (error) {
             console.error(error);
             return res.status(401).json({
                 success: false,
-                message: 'Not authorized, token failed',
+                message: 'Not authorized, token failed'
             });
         }
     }
 
-    if (!token) {
-        return res.status(401).json({
-            success: false,
-            message: 'Not authorized, no token',
-        });
-    }
+    return res.status(401).json({
+        success: false,
+        message: 'Not authorized, no token'
+    });
 };
 
 // Admin middleware - Check if user is admin
 exports.admin = (req, res, next) => {
     if (req.user && req.user.role === 'admin') {
-        next();
-    } else {
-        res.status(403).json({
-            success: false,
-            message: 'Not authorized as admin',
-        });
+        return next();
     }
+
+    return res.status(403).json({
+        success: false,
+        message: 'Not authorized as admin'
+    });
 };
