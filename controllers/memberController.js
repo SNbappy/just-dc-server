@@ -8,22 +8,28 @@ exports.getAllMembers = async (req, res) => {
     try {
         const { role, isActive } = req.query;
 
-        const query = {};
-        if (role) query.role = role;
-        if (isActive !== undefined) query.isActive = isActive === 'true';
+        const where = {};
+        if (role) where.role = role;
+        if (isActive !== undefined) where.isActive = isActive === 'true';
 
-        const members = await Member.find(query).sort({ priority: -1, createdAt: -1 });
+        const members = await Member.findAll({
+            where,
+            order: [
+                ['priority', 'DESC'],
+                ['createdAt', 'DESC']
+            ]
+        });
 
         res.status(200).json({
             success: true,
             count: members.length,
-            data: members,
+            data: members
         });
     } catch (error) {
         res.status(500).json({
             success: false,
             message: 'Server Error',
-            error: error.message,
+            error: error.message
         });
     }
 };
@@ -33,24 +39,24 @@ exports.getAllMembers = async (req, res) => {
 // @access  Public
 exports.getMember = async (req, res) => {
     try {
-        const member = await Member.findById(req.params.id);
+        const member = await Member.findByPk(req.params.id);
 
         if (!member) {
             return res.status(404).json({
                 success: false,
-                message: 'Member not found',
+                message: 'Member not found'
             });
         }
 
         res.status(200).json({
             success: true,
-            data: member,
+            data: member
         });
     } catch (error) {
         res.status(500).json({
             success: false,
             message: 'Server Error',
-            error: error.message,
+            error: error.message
         });
     }
 };
@@ -69,7 +75,7 @@ exports.createMember = async (req, res) => {
 
         const memberData = {
             ...req.body,
-            image: imageUrl,
+            image: imageUrl
         };
 
         // Parse socialLinks if it's a string
@@ -82,13 +88,13 @@ exports.createMember = async (req, res) => {
         res.status(201).json({
             success: true,
             message: 'Member created successfully',
-            data: member,
+            data: member
         });
     } catch (error) {
         res.status(500).json({
             success: false,
             message: 'Failed to create member',
-            error: error.message,
+            error: error.message
         });
     }
 };
@@ -98,12 +104,12 @@ exports.createMember = async (req, res) => {
 // @access  Private/Admin
 exports.updateMember = async (req, res) => {
     try {
-        let member = await Member.findById(req.params.id);
+        let member = await Member.findByPk(req.params.id);
 
         if (!member) {
             return res.status(404).json({
                 success: false,
-                message: 'Member not found',
+                message: 'Member not found'
             });
         }
 
@@ -120,7 +126,7 @@ exports.updateMember = async (req, res) => {
 
         const updateData = {
             ...req.body,
-            image: imageUrl,
+            image: imageUrl
         };
 
         // Parse socialLinks if it's a string
@@ -128,21 +134,18 @@ exports.updateMember = async (req, res) => {
             updateData.socialLinks = JSON.parse(req.body.socialLinks);
         }
 
-        member = await Member.findByIdAndUpdate(req.params.id, updateData, {
-            new: true,
-            runValidators: true,
-        });
+        await member.update(updateData);
 
         res.status(200).json({
             success: true,
             message: 'Member updated successfully',
-            data: member,
+            data: member
         });
     } catch (error) {
         res.status(500).json({
             success: false,
             message: 'Failed to update member',
-            error: error.message,
+            error: error.message
         });
     }
 };
@@ -152,12 +155,12 @@ exports.updateMember = async (req, res) => {
 // @access  Private/Admin
 exports.deleteMember = async (req, res) => {
     try {
-        const member = await Member.findById(req.params.id);
+        const member = await Member.findByPk(req.params.id);
 
         if (!member) {
             return res.status(404).json({
                 success: false,
-                message: 'Member not found',
+                message: 'Member not found'
             });
         }
 
@@ -166,17 +169,17 @@ exports.deleteMember = async (req, res) => {
             await deleteFromCloudinary(member.image);
         }
 
-        await Member.findByIdAndDelete(req.params.id);
+        await member.destroy();
 
         res.status(200).json({
             success: true,
-            message: 'Member deleted successfully',
+            message: 'Member deleted successfully'
         });
     } catch (error) {
         res.status(500).json({
             success: false,
             message: 'Failed to delete member',
-            error: error.message,
+            error: error.message
         });
     }
 };
