@@ -1,55 +1,101 @@
-const mongoose = require('mongoose');
+const { DataTypes, Model } = require('sequelize');
+const { sequelize } = require('../config/db');
 
-const eventSchema = new mongoose.Schema({
-    title: {
-        type: String,
-        required: [true, 'Please add an event title'],
-        trim: true
+class Event extends Model { }
+
+Event.init(
+    {
+        id: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            autoIncrement: true,
+            primaryKey: true
+        },
+
+        title: {
+            type: DataTypes.STRING,
+            allowNull: false,
+            validate: {
+                notEmpty: { msg: 'Please add an event title' }
+            }
+        },
+
+        description: {
+            type: DataTypes.TEXT,
+            allowNull: false,
+            validate: {
+                notEmpty: { msg: 'Please add a description' }
+            }
+        },
+
+        date: {
+            type: DataTypes.DATEONLY,
+            allowNull: false
+        },
+
+        time: {
+            type: DataTypes.STRING,
+            allowNull: false
+        },
+
+        location: {
+            type: DataTypes.STRING,
+            allowNull: false
+        },
+
+        category: {
+            type: DataTypes.ENUM(
+                'workshop',
+                'tournament',
+                'practice',
+                'seminar',
+                'competition'
+            ),
+            allowNull: false,
+            defaultValue: 'workshop'
+        },
+
+        maxParticipants: {
+            type: DataTypes.INTEGER,
+            allowNull: true,
+            defaultValue: null
+        },
+
+        image: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            defaultValue: null
+        },
+
+        status: {
+            type: DataTypes.ENUM(
+                'upcoming',
+                'ongoing',
+                'completed',
+                'cancelled'
+            ),
+            allowNull: false,
+            defaultValue: 'upcoming'
+        },
+
+        createdBy: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            allowNull: false
+            // Will link to User.id later (foreign key)
+        }
     },
-    description: {
-        type: String,
-        required: [true, 'Please add a description']
-    },
-    date: {
-        type: Date,
-        required: [true, 'Please add an event date']
-    },
-    time: {
-        type: String,
-        required: [true, 'Please add an event time']
-    },
-    location: {
-        type: String,
-        required: [true, 'Please add a location']
-    },
-    category: {
-        type: String,
-        enum: ['workshop', 'tournament', 'practice', 'seminar', 'competition'],
-        default: 'workshop'
-    },
-    maxParticipants: {
-        type: Number,
-        default: null
-    },
-    image: {
-        type: String,
-        default: null
-    },
-    status: {
-        type: String,
-        enum: ['upcoming', 'ongoing', 'completed', 'cancelled'],
-        default: 'upcoming'
-    },
-    createdBy: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
-        required: true
+    {
+        sequelize,
+        modelName: 'Event',
+        tableName: 'events',
+        timestamps: true,
+
+        indexes: [
+            {
+                type: 'FULLTEXT',
+                fields: ['title', 'description']
+            }
+        ]
     }
-}, {
-    timestamps: true
-});
+);
 
-// Index for searching
-eventSchema.index({ title: 'text', description: 'text' });
-
-module.exports = mongoose.model('Event', eventSchema);
+module.exports = Event;
