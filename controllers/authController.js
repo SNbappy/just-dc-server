@@ -25,7 +25,7 @@ exports.register = async (req, res) => {
         const { name, email, phone, password } = req.body;
 
         // Check if user exists
-        const userExists = await User.findOne({ email });
+        const userExists = await User.findOne({ where: { email } });
         if (userExists) {
             return res.status(400).json({
                 success: false,
@@ -42,14 +42,14 @@ exports.register = async (req, res) => {
         });
 
         // Generate token
-        const token = generateToken(user._id);
+        const token = generateToken(user.id);
 
         res.status(201).json({
             success: true,
             message: 'User registered successfully',
             token,
             user: {
-                _id: user._id,
+                _id: user.id, // keep _id for frontend compatibility
                 name: user.name,
                 email: user.email,
                 phone: user.phone,
@@ -79,8 +79,8 @@ exports.login = async (req, res) => {
 
         const { email, password } = req.body;
 
-        // Check for user
-        const user = await User.findOne({ email }).select('+password');
+        // Check for user (include password for login)
+        const user = await User.scope('withPassword').findOne({ where: { email } });
 
         if (!user) {
             return res.status(401).json({
@@ -91,7 +91,6 @@ exports.login = async (req, res) => {
 
         // Check if password matches
         const isMatch = await user.matchPassword(password);
-
         if (!isMatch) {
             return res.status(401).json({
                 success: false,
@@ -107,15 +106,23 @@ exports.login = async (req, res) => {
             });
         }
 
+        // Update lastLogin (optional, but your schema has it)
+        try {
+            user.lastLogin = new Date();
+            await user.save();
+        } catch (e) {
+            // ignore if it fails; don't block login
+        }
+
         // Generate token
-        const token = generateToken(user._id);
+        const token = generateToken(user.id);
 
         res.json({
             success: true,
             message: 'Login successful',
             token,
             user: {
-                _id: user._id,
+                _id: user.id, // keep _id for frontend compatibility
                 name: user.name,
                 email: user.email,
                 phone: user.phone,
@@ -136,7 +143,7 @@ exports.login = async (req, res) => {
 // @access  Private
 exports.getMe = async (req, res) => {
     try {
-        const user = await User.findById(req.user.id);
+        const user = await User.findByPk(req.user.id);
 
         res.json({
             success: true,
@@ -164,10 +171,20 @@ exports.updateDetails = async (req, res) => {
             batch: req.body.batch
         };
 
-        const user = await User.findByIdAndUpdate(req.user.id, fieldsToUpdate, {
-            new: true,
-            runValidators: true
+        // Remove undefined values (so they don't overwrite with NULL)
+        Object.keys(fieldsToUpdate).forEach((key) => {
+            if (fieldsToUpdate[key] === undefined) delete fieldsToUpdate[key];
         });
+
+        const user = await User.findByPk(req.user.id);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        await user.update(fieldsToUpdate);
 
         res.json({
             success: true,
@@ -186,7 +203,14 @@ exports.updateDetails = async (req, res) => {
 // @access  Private
 exports.updatePassword = async (req, res) => {
     try {
-        const user = await User.findById(req.user.id).select('+password');
+        const user = await User.scope('withPassword').findByPk(req.user.id);
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
 
         // Check current password
         if (!(await user.matchPassword(req.body.currentPassword))) {
@@ -197,9 +221,9 @@ exports.updatePassword = async (req, res) => {
         }
 
         user.password = req.body.newPassword;
-        await user.save();
+        await user.save(); // triggers beforeUpdate hook to hash password
 
-        const token = generateToken(user._id);
+        const token = generateToken(user.id);
 
         res.json({
             success: true,
