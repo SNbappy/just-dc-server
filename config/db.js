@@ -9,30 +9,41 @@ const sequelize = new Sequelize(
         host: process.env.DB_HOST,
         port: process.env.DB_PORT || 3306,
         dialect: 'mysql',
-        logging: false,
+        logging: process.env.DB_LOGGING === 'true' ? console.log : false,
+        timezone: '+00:00',
+        dialectOptions: {
+            dateStrings: true,
+            typeCast: true,
+        },
     }
 );
 
 const connectDB = async () => {
     try {
         await sequelize.authenticate();
-        console.log('✅ MySQL Connected Successfully');
-    } catch (error) {
-        console.error('❌ MySQL connection failed:', error.message);
-        process.exit(1);
+        console.log('✅ MySQL Connected (Sequelize)');
+    } catch (err) {
+        console.error('❌ DB Connection Error:', err.message);
+        throw err;
     }
 };
 
-// ✅ If you don’t want migrations, keep this ON (dev/staging).
-// In production, use migrations later.
+/**
+ * ✅ No migrations needed:
+ * - dev: alter table automatically
+ * - prod: DO NOT use alter/force (keep safe)
+ */
 const syncDB = async () => {
-    try {
-        await sequelize.sync({ alter: true });
-        console.log('✅ MySQL Tables Synced (alter:true)');
-    } catch (error) {
-        console.error('❌ MySQL sync failed:', error.message);
-        process.exit(1);
+    const isProd = process.env.NODE_ENV === 'production';
+
+    if (isProd) {
+        await sequelize.sync(); // safe
+        console.log('✅ DB Sync done (production safe)');
+        return;
     }
+
+    await sequelize.sync({ alter: true });
+    console.log('✅ DB Sync done (dev alter=true)');
 };
 
 module.exports = { sequelize, connectDB, syncDB };

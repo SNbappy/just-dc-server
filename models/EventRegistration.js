@@ -17,55 +17,108 @@ EventRegistration.init(
             allowNull: false,
         },
 
-        // ✅ if logged in
+        // can be NULL for guests
         userId: {
             type: DataTypes.INTEGER.UNSIGNED,
             allowNull: true,
             defaultValue: null,
         },
 
-        // ✅ guest (public registration)
-        guestName: { type: DataTypes.STRING, allowNull: true, defaultValue: null },
-        guestEmail: { type: DataTypes.STRING, allowNull: true, defaultValue: null },
-        guestPhone: { type: DataTypes.STRING, allowNull: true, defaultValue: null },
-
-        // registration state
-        status: {
-            type: DataTypes.ENUM('pending', 'confirmed', 'cancelled'),
+        // snapshot info (works for both guest & user)
+        type: {
+            type: DataTypes.ENUM('guest', 'internal'),
             allowNull: false,
-            defaultValue: 'pending',
+            defaultValue: 'guest',
         },
 
-        // payment
-        amount: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
-
-        paymentStatus: {
-            type: DataTypes.ENUM('none', 'pending', 'paid', 'failed'),
+        name: {
+            type: DataTypes.STRING,
             allowNull: false,
-            defaultValue: 'none',
         },
 
-        paymentMethod: {
-            type: DataTypes.ENUM('bkash', 'nagad', 'rocket', 'bank', 'cash', 'sslcommerz'),
-            allowNull: true,
-            defaultValue: null,
+        email: {
+            type: DataTypes.STRING,
+            allowNull: false,
+            set(value) {
+                this.setDataValue('email', value ? value.toLowerCase().trim() : value);
+            },
         },
 
-        transactionId: { type: DataTypes.STRING, allowNull: true, defaultValue: null },
-
-        // ✅ Certificate support later
-        credentialId: {
+        phone: {
             type: DataTypes.STRING,
             allowNull: true,
             defaultValue: null,
-            unique: true,
         },
+
+        studentId: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            defaultValue: null,
+        },
+
+        department: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            defaultValue: null,
+        },
+
+        batch: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            defaultValue: null,
+        },
+
+        organization: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            defaultValue: null,
+        },
+
+        // ✅ NEW: fee snapshot
+        amount: {
+            type: DataTypes.INTEGER,
+            allowNull: false,
+            defaultValue: 0,
+        },
+
+        // registration flow
+        status: {
+            type: DataTypes.ENUM('pending_payment', 'confirmed', 'cancelled'),
+            allowNull: false,
+            defaultValue: 'pending_payment',
+        },
+
+        // link to payments table (type=event)
+        paymentId: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            allowNull: true,
+            defaultValue: null,
+        },
+
+        // certificate related
+        attendanceStatus: {
+            type: DataTypes.ENUM('unknown', 'present', 'absent'),
+            allowNull: false,
+            defaultValue: 'unknown',
+        },
+
         certificateIssued: {
             type: DataTypes.BOOLEAN,
             allowNull: false,
             defaultValue: false,
         },
-        certificateIssuedAt: { type: DataTypes.DATE, allowNull: true, defaultValue: null },
+
+        credentialId: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            defaultValue: null,
+        },
+
+        certificateUrl: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            defaultValue: null,
+        },
     },
     {
         sequelize,
@@ -75,7 +128,15 @@ EventRegistration.init(
         indexes: [
             { fields: ['eventId'] },
             { fields: ['userId'] },
-            { fields: ['paymentStatus'] },
+            { fields: ['email'] },
+            { fields: ['paymentId'] },
+
+            // ✅ prevent duplicate email per event (guest or internal snapshot)
+            { unique: true, fields: ['eventId', 'email'] },
+
+            // ✅ prevent duplicate logged-in user per event
+            // MySQL allows multiple NULLs, so guests won't conflict here.
+            { unique: true, fields: ['eventId', 'userId'] },
         ],
     }
 );

@@ -1,3 +1,4 @@
+// routes/eventRoutes.js
 const express = require('express');
 const router = express.Router();
 
@@ -8,19 +9,20 @@ const {
     updateEvent,
     deleteEvent,
     getUpcomingEvents,
+} = require('../controllers/eventController');
 
-    // ✅ NEW
+const {
     registerForEvent,
     getEventRegistrations,
     submitRegistrationPayment,
     verifyRegistrationPayment,
     issueCertificate,
-} = require('../controllers/eventController');
+} = require('../controllers/eventRegistrationController');
 
 const { protect, optionalAuth } = require('../middleware/auth');
 const { authorize } = require('../middleware/roleMiddleware');
 
-// Public
+// ================= PUBLIC =================
 router.get('/', getAllEvents);
 router.get('/upcoming', getUpcomingEvents);
 router.get('/:id', getEvent);
@@ -28,15 +30,15 @@ router.get('/:id', getEvent);
 // ✅ Public registration (guest OR logged in)
 router.post('/:id/register', optionalAuth, registerForEvent);
 
-// ✅ submit payment tx (guest/user)
+// ✅ submit payment TX (guest/user) -> store method + transactionId
 router.put('/:eventId/registrations/:regId/payment', optionalAuth, submitRegistrationPayment);
 
-// ✅ Management: Admin / President / General Secretary
+// ================= MANAGEMENT =================
 router.post('/', protect, authorize('admin', 'president', 'general_secretary'), createEvent);
 router.put('/:id', protect, authorize('admin', 'president', 'general_secretary'), updateEvent);
 router.delete('/:id', protect, authorize('admin', 'president', 'general_secretary'), deleteEvent);
 
-// ✅ Management registration panel
+// ✅ registrations list (management)
 router.get(
     '/:id/registrations',
     protect,
@@ -44,7 +46,7 @@ router.get(
     getEventRegistrations
 );
 
-// ✅ verify payments (management)
+// ✅ verify payment (management)
 router.put(
     '/:eventId/registrations/:regId/verify',
     protect,

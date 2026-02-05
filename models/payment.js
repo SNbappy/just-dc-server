@@ -2,7 +2,7 @@
 const { DataTypes, Model } = require('sequelize');
 const { sequelize } = require('../config/db');
 
-class Payment extends Model {}
+class Payment extends Model { }
 
 Payment.init(
     {
@@ -12,9 +12,26 @@ Payment.init(
             primaryKey: true
         },
 
+        // ✅ can be NULL for guest event payments
         userId: {
             type: DataTypes.INTEGER.UNSIGNED,
-            allowNull: false
+            allowNull: true,
+            defaultValue: null
+        },
+
+        // ✅ NEW: snapshot payer info for guest/edge cases
+        payerName: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            defaultValue: null
+        },
+        payerEmail: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            defaultValue: null,
+            set(value) {
+                this.setDataValue('payerEmail', value ? value.toLowerCase().trim() : value);
+            }
         },
 
         amount: {
@@ -22,9 +39,22 @@ Payment.init(
             allowNull: false
         },
 
+        // ✅ add "event" type
         type: {
-            type: DataTypes.ENUM('registration', 'monthly'),
+            type: DataTypes.ENUM('registration', 'monthly', 'event'),
             allowNull: false
+        },
+
+        // ✅ NEW: event payment linkage
+        eventId: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            allowNull: true,
+            defaultValue: null
+        },
+        eventRegistrationId: {
+            type: DataTypes.INTEGER.UNSIGNED,
+            allowNull: true,
+            defaultValue: null
         },
 
         status: {
@@ -86,12 +116,13 @@ Payment.init(
         timestamps: true,
 
         indexes: [
-            // Query performance
             { fields: ['userId', 'type'] },
             { fields: ['status'] },
+            { fields: ['eventId'] },
+            { fields: ['eventRegistrationId'] },
+            { fields: ['transactionId'] },
 
-            // ✅ Prevent duplicate monthly per user per month/year at DB level
-            // (registration month is NULL so controller enforces that)
+            // keep monthly unique constraint
             {
                 unique: true,
                 fields: ['userId', 'type', 'month', 'year']
