@@ -1,3 +1,4 @@
+// server.js
 const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
@@ -8,14 +9,8 @@ dotenv.config();
 // 2) Load DB after env
 const { connectDB, syncDB } = require('./config/db');
 
-// 3) Load models BEFORE sync
-require('./models/User');
-require('./models/Event');
-require('./models/EventRegistration'); // ✅ NEW
-require('./models/Gallery');
-require('./models/GalleryImage');
-require('./models/Member');
-require('./models/Payment');
+// 3) ✅ UPDATED: Load models through index.js to initialize associations
+require('./models/index');
 
 const app = express();
 
@@ -39,6 +34,7 @@ app.use('/api/gallery', require('./routes/galleryRoutes'));
 app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/payments', require('./routes/paymentRoutes'));
 app.use('/api/sslcommerz', require('./routes/sslcommerzRoutes'));
+app.use('/api/emails', require('./routes/emailRoutes')); // ✅ ADD THIS
 
 // Welcome route
 app.get('/', (req, res) => {

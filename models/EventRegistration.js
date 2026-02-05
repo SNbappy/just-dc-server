@@ -119,6 +119,13 @@ EventRegistration.init(
             allowNull: true,
             defaultValue: null,
         },
+
+        // ✅ NEW: Add this field for certificate issued timestamp
+        certificateIssuedAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            defaultValue: null,
+        },
     },
     {
         sequelize,
@@ -140,5 +147,20 @@ EventRegistration.init(
         ],
     }
 );
+
+// ✅ ADD ASSOCIATIONS HERE (after init)
+EventRegistration.associate = function (models) {
+    // EventRegistration belongs to Event
+    EventRegistration.belongsTo(models.Event, {
+        foreignKey: 'eventId',
+        as: 'event',
+    });
+
+    // EventRegistration belongs to User
+    EventRegistration.belongsTo(models.User, {
+        foreignKey: 'userId',
+        as: 'user',
+    });
+};
 
 module.exports = EventRegistration;

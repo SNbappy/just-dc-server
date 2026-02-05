@@ -1,3 +1,4 @@
+// models/Event.js
 const { DataTypes, Model } = require('sequelize');
 const { sequelize } = require('../config/db');
 
@@ -85,5 +86,14 @@ Event.init(
         ],
     }
 );
+
+// ✅ ADD ASSOCIATIONS HERE (after init)
+Event.associate = function (models) {
+    // Event has many EventRegistrations
+    Event.hasMany(models.EventRegistration, {
+        foreignKey: 'eventId',
+        as: 'registrations',
+    });
+};
 
 module.exports = Event;

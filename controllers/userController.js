@@ -1,6 +1,8 @@
 // controllers/userController.js
 const { Op } = require('sequelize');
 const User = require('../models/User');
+const EventRegistration = require('../models/EventRegistration'); // ✅ ADD
+const Event = require('../models/Event'); // ✅ ADD
 
 const MANAGEMENT_ROLES = ['admin', 'moderator', 'president', 'general_secretary'];
 
@@ -75,6 +77,53 @@ exports.getUser = async (req, res) => {
             success: false,
             message: 'Server Error',
             error: error.message
+        });
+    }
+};
+
+// ✅ FIXED: Get user's certificates
+// @desc    Get my certificates
+// @route   GET /api/users/my-certificates
+// @access  Private
+exports.getMyCertificates = async (req, res) => {
+    try {
+        const userId = req.user.id;
+
+        // ✅ REMOVED: const { EventRegistration, Event } = require('../models');
+        // Models are now imported at the top of the file
+
+        // Find all registrations with certificates for this user
+        const certificates = await EventRegistration.findAll({
+            where: {
+                userId,
+                certificateIssued: true,
+            },
+            include: [
+                {
+                    model: Event,
+                    as: 'event',
+                    attributes: ['id', 'title', 'date', 'location', 'category'],
+                },
+                {
+                    model: User,
+                    as: 'user',
+                    attributes: ['id', 'name', 'email'],
+                },
+            ],
+            order: [['certificateIssuedAt', 'DESC']],
+        });
+
+        return res.json({
+            success: true,
+            count: certificates.length,
+            data: certificates,
+        });
+    } catch (error) {
+        console.error('Error fetching my certificates:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Server error while fetching certificates',
+            error: error.message,
         });
     }
 };

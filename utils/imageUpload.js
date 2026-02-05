@@ -1,4 +1,5 @@
-const cloudinary = require('./cloudinary');
+// utils/imageUpload.js
+const { cloudinary } = require('./cloudinary');
 const streamifier = require('streamifier');
 
 const uploadToCloudinary = (fileBuffer, folder = 'just-dc') => {

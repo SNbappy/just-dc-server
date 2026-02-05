@@ -1,6 +1,8 @@
+// controllers/sslcommerzController.js
 const SSLCommerzPayment = require('sslcommerz-lts');
 const Payment = require('../models/Payment');
 const User = require('../models/User');
+const { Op } = require('sequelize');
 
 const store_id = process.env.SSL_STORE_ID;
 const store_passwd = process.env.SSL_STORE_PASSWORD;
@@ -21,27 +23,31 @@ exports.initiatePayment = async (req, res) => {
             });
         }
 
+        const numAmount = Number(amount);
+
         // Validate amount
-        if (type === 'registration' && amount !== 150) {
+        if (type === 'registration' && numAmount !== 150) {
             return res.status(400).json({
                 success: false,
                 message: 'Registration fee must be 150 BDT',
             });
         }
 
-        if (type === 'monthly' && amount !== 30) {
+        if (type === 'monthly' && numAmount !== 30) {
             return res.status(400).json({
                 success: false,
                 message: 'Monthly fee must be 30 BDT',
             });
         }
 
-        // Check if payment already exists
+        // Check if payment already exists (Sequelize syntax)
         if (type === 'registration') {
             const existingPayment = await Payment.findOne({
-                user: req.user.id,
-                type: 'registration',
-                status: { $in: ['paid', 'pending'] },
+                where: {
+                    userId: req.user.id,
+                    type: 'registration',
+                    status: { [Op.in]: ['paid', 'pending'] }
+                }
             });
 
             if (existingPayment) {
@@ -54,10 +60,12 @@ exports.initiatePayment = async (req, res) => {
 
         if (type === 'monthly' && month) {
             const existingPayment = await Payment.findOne({
-                user: req.user.id,
-                type: 'monthly',
-                month,
-                status: { $in: ['paid', 'pending'] },
+                where: {
+                    userId: req.user.id,
+                    type: 'monthly',
+                    month,
+                    status: { [Op.in]: ['paid', 'pending'] }
+                }
             });
 
             if (existingPayment) {
@@ -68,31 +76,35 @@ exports.initiatePayment = async (req, res) => {
             }
         }
 
-        // Create payment record
+        const year = type === 'monthly' && month ? parseInt(month.split('-')[0], 10) : null;
+        const dueDate = type === 'monthly' && month ? new Date(`${month}-05T00:00:00.000Z`) : null;
+
+        // Create payment record (Sequelize)
         const payment = await Payment.create({
-            user: req.user.id,
-            amount,
+            userId: req.user.id,
+            amount: numAmount,
             type,
             paymentMethod: 'sslcommerz',
-            month: type === 'monthly' ? month : undefined,
-            year: type === 'monthly' && month ? parseInt(month.split('-')[0]) : undefined,
+            month: type === 'monthly' ? month : null,
+            year,
+            dueDate,
             status: 'pending',
         });
 
-        // Get user details
-        const user = await User.findById(req.user.id);
+        // Get user details (Sequelize)
+        const user = await User.findByPk(req.user.id);
 
         // Generate transaction ID
-        const tran_id = `${type.toUpperCase()}-${payment._id}`;
+        const tran_id = `${type.toUpperCase()}-${payment.id}`;
 
         // SSLCommerz payment data
         const data = {
-            total_amount: amount,
+            total_amount: numAmount,
             currency: 'BDT',
             tran_id: tran_id,
-            success_url: `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/sslcommerz/success`,
-            fail_url: `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/sslcommerz/fail`,
-            cancel_url: `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/sslcommerz/cancel`,
+            success_url: `${process.env.CLIENT_URL || 'http://localhost:5173'}/payment/success`,
+            fail_url: `${process.env.CLIENT_URL || 'http://localhost:5173'}/payment/failed`,
+            cancel_url: `${process.env.CLIENT_URL || 'http://localhost:5173'}/payment/cancelled`,
             ipn_url: `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/sslcommerz/ipn`,
             shipping_method: 'NO',
             product_name: type === 'registration' ? 'Club Registration Fee' : 'Monthly Club Fee',
@@ -116,9 +128,8 @@ exports.initiatePayment = async (req, res) => {
         const sslcz = new SSLCommerzPayment(store_id, store_passwd, is_live);
         const apiResponse = await sslcz.init(data);
 
-        // Update payment with transaction ID
-        payment.transactionId = tran_id;
-        await payment.save();
+        // Update payment with transaction ID (Sequelize)
+        await payment.update({ transactionId: tran_id });
 
         // Return gateway URL
         res.status(200).json({
@@ -127,7 +138,7 @@ exports.initiatePayment = async (req, res) => {
             data: {
                 paymentUrl: apiResponse.GatewayPageURL,
                 transactionId: tran_id,
-                paymentId: payment._id,
+                paymentId: payment.id,
             },
         });
     } catch (error) {
@@ -152,40 +163,45 @@ exports.paymentSuccess = async (req, res) => {
         const validation = await sslcz.validate({ val_id });
 
         if (validation.status === 'VALID' || validation.status === 'VALIDATED') {
-            // Find payment by transaction ID
-            const payment = await Payment.findOne({ transactionId: tran_id });
+            // Find payment by transaction ID (Sequelize)
+            const payment = await Payment.findOne({
+                where: { transactionId: tran_id }
+            });
 
             if (!payment) {
-                return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment-failed`);
+                return res.redirect(`${process.env.CLIENT_URL || 'http://localhost:5173'}/payment/failed`);
             }
 
-            // Update payment status
-            payment.status = 'paid';
-            payment.paidAt = new Date();
-            payment.notes = `Validated: ${val_id}`;
-            await payment.save();
+            // Update payment status (Sequelize)
+            await payment.update({
+                status: 'paid',
+                paidAt: new Date(),
+                notes: `Validated: ${val_id}`,
+            });
 
-            // Update user payment status
-            const user = await User.findById(payment.user);
+            // Update user payment status (Sequelize)
+            const user = await User.findByPk(payment.userId);
 
-            if (payment.type === 'registration') {
-                user.registrationFeePaid = true;
-                user.registrationPaymentDate = new Date();
-            } else if (payment.type === 'monthly') {
-                user.lastMonthlyPayment = new Date();
-                user.monthlyFeeStatus = 'current';
+            if (user) {
+                const updates = {};
+                if (payment.type === 'registration') {
+                    updates.registrationFeePaid = true;
+                    updates.registrationPaymentDate = new Date();
+                } else if (payment.type === 'monthly') {
+                    updates.lastMonthlyPayment = new Date();
+                    updates.monthlyFeeStatus = 'current';
+                }
+                await user.update(updates);
             }
-
-            await user.save();
 
             // Redirect to success page
-            res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment-success?tran_id=${tran_id}`);
+            res.redirect(`${process.env.CLIENT_URL || 'http://localhost:5173'}/payment/success?tran_id=${tran_id}`);
         } else {
-            res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment-failed`);
+            res.redirect(`${process.env.CLIENT_URL || 'http://localhost:5173'}/payment/failed`);
         }
     } catch (error) {
         console.error('Payment success error:', error);
-        res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment-failed`);
+        res.redirect(`${process.env.CLIENT_URL || 'http://localhost:5173'}/payment/failed`);
     }
 };
 
@@ -196,17 +212,19 @@ exports.paymentFail = async (req, res) => {
     try {
         const { tran_id } = req.body;
 
-        // Update payment status
-        const payment = await Payment.findOne({ transactionId: tran_id });
+        // Update payment status (Sequelize)
+        const payment = await Payment.findOne({
+            where: { transactionId: tran_id }
+        });
+
         if (payment) {
-            payment.status = 'failed';
-            await payment.save();
+            await payment.update({ status: 'failed' });
         }
 
-        res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment-failed`);
+        res.redirect(`${process.env.CLIENT_URL || 'http://localhost:5173'}/payment/failed`);
     } catch (error) {
         console.error('Payment fail error:', error);
-        res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment-failed`);
+        res.redirect(`${process.env.CLIENT_URL || 'http://localhost:5173'}/payment/failed`);
     }
 };
 
@@ -217,18 +235,22 @@ exports.paymentCancel = async (req, res) => {
     try {
         const { tran_id } = req.body;
 
-        // Update payment status
-        const payment = await Payment.findOne({ transactionId: tran_id });
+        // Update payment status (Sequelize)
+        const payment = await Payment.findOne({
+            where: { transactionId: tran_id }
+        });
+
         if (payment) {
-            payment.status = 'failed';
-            payment.notes = 'Payment cancelled by user';
-            await payment.save();
+            await payment.update({
+                status: 'failed',
+                notes: 'Payment cancelled by user',
+            });
         }
 
-        res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment-cancelled`);
+        res.redirect(`${process.env.CLIENT_URL || 'http://localhost:5173'}/payment/cancelled`);
     } catch (error) {
         console.error('Payment cancel error:', error);
-        res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment-failed`);
+        res.redirect(`${process.env.CLIENT_URL || 'http://localhost:5173'}/payment/failed`);
     }
 };
 
@@ -240,11 +262,15 @@ exports.paymentIPN = async (req, res) => {
         const { tran_id, status } = req.body;
 
         if (status === 'VALID' || status === 'VALIDATED') {
-            const payment = await Payment.findOne({ transactionId: tran_id });
+            const payment = await Payment.findOne({
+                where: { transactionId: tran_id }
+            });
+
             if (payment && payment.status === 'pending') {
-                payment.status = 'paid';
-                payment.paidAt = new Date();
-                await payment.save();
+                await payment.update({
+                    status: 'paid',
+                    paidAt: new Date(),
+                });
             }
         }
 
