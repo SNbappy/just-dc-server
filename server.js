@@ -2,22 +2,31 @@ const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
 
-// Load environment variables FIRST
+// 1) Load env FIRST
 dotenv.config();
 
-// Import DB AFTER env is loaded
-const { connectDB } = require('./config/db');
+// 2) Load DB after env
+const { connectDB, syncDB } = require('./config/db');
 
-// Connect to MySQL
-connectDB();
+// 3) Load models BEFORE sync
+require('./models/User');
+require('./models/Event');
+require('./models/EventRegistration'); // ✅ NEW
+require('./models/Gallery');
+require('./models/GalleryImage');
+require('./models/Member');
+require('./models/Payment');
 
 const app = express();
 
 // Middleware
-app.use(cors({
-    origin: process.env.CLIENT_URL,
-    credentials: true
-}));
+app.use(
+    cors({
+        origin: process.env.CLIENT_URL,
+        credentials: true,
+    })
+);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -36,14 +45,6 @@ app.get('/', (req, res) => {
     res.json({
         message: 'JUST Debate Club API',
         version: '1.0.0',
-        endpoints: {
-            auth: '/api/auth',
-            events: '/api/events',
-            members: '/api/members',
-            gallery: '/api/gallery',
-            upload: '/api/upload',
-            users: '/api/users'
-        }
     });
 });
 
@@ -52,6 +53,18 @@ app.use(require('./middleware/errorHandler'));
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
-    console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
-});
+(async () => {
+    try {
+        await connectDB();
+        await syncDB(); // ✅ auto creates/updates tables without migrations
+
+        app.listen(PORT, () => {
+            console.log(
+                `Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`
+            );
+        });
+    } catch (err) {
+        console.error('❌ Server startup failed:', err);
+        process.exit(1);
+    }
+})();

@@ -8,93 +8,81 @@ Event.init(
         id: {
             type: DataTypes.INTEGER.UNSIGNED,
             autoIncrement: true,
-            primaryKey: true
+            primaryKey: true,
         },
 
         title: {
             type: DataTypes.STRING,
             allowNull: false,
-            validate: {
-                notEmpty: { msg: 'Please add an event title' }
-            }
+            validate: { notEmpty: { msg: 'Please add an event title' } },
         },
 
         description: {
             type: DataTypes.TEXT,
             allowNull: false,
-            validate: {
-                notEmpty: { msg: 'Please add a description' }
-            }
+            validate: { notEmpty: { msg: 'Please add a description' } },
         },
 
-        date: {
-            type: DataTypes.DATEONLY,
-            allowNull: false
-        },
-
-        time: {
-            type: DataTypes.STRING,
-            allowNull: false
-        },
-
-        location: {
-            type: DataTypes.STRING,
-            allowNull: false
-        },
+        date: { type: DataTypes.DATEONLY, allowNull: false },
+        time: { type: DataTypes.STRING, allowNull: false },
+        location: { type: DataTypes.STRING, allowNull: false },
 
         category: {
-            type: DataTypes.ENUM(
-                'workshop',
-                'tournament',
-                'practice',
-                'seminar',
-                'competition'
-            ),
+            type: DataTypes.ENUM('workshop', 'tournament', 'practice', 'seminar', 'competition'),
             allowNull: false,
-            defaultValue: 'workshop'
+            defaultValue: 'workshop',
         },
 
-        maxParticipants: {
-            type: DataTypes.INTEGER,
-            allowNull: true,
-            defaultValue: null
-        },
-
-        image: {
-            type: DataTypes.STRING,
-            allowNull: true,
-            defaultValue: null
-        },
+        maxParticipants: { type: DataTypes.INTEGER, allowNull: true, defaultValue: null },
+        image: { type: DataTypes.STRING, allowNull: true, defaultValue: null },
 
         status: {
-            type: DataTypes.ENUM(
-                'upcoming',
-                'ongoing',
-                'completed',
-                'cancelled'
-            ),
+            type: DataTypes.ENUM('upcoming', 'ongoing', 'completed', 'cancelled'),
             allowNull: false,
-            defaultValue: 'upcoming'
+            defaultValue: 'upcoming',
+        },
+
+        // ✅ NEW: public vs inter-club
+        accessType: {
+            type: DataTypes.ENUM('public', 'inter_club'),
+            allowNull: false,
+            defaultValue: 'public',
+        },
+
+        // ✅ NEW: fee for event registration (0 = free)
+        registrationFee: {
+            type: DataTypes.INTEGER,
+            allowNull: false,
+            defaultValue: 0,
+        },
+
+        // ✅ NEW: enable/disable registration
+        registrationOpen: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: true,
+        },
+
+        // People list (your existing)
+        participants: {
+            type: DataTypes.JSON,
+            allowNull: false,
+            defaultValue: [],
         },
 
         createdBy: {
             type: DataTypes.INTEGER.UNSIGNED,
-            allowNull: false
-            // Will link to User.id later (foreign key)
-        }
+            allowNull: false,
+        },
     },
     {
         sequelize,
         modelName: 'Event',
         tableName: 'events',
         timestamps: true,
-
         indexes: [
-            {
-                type: 'FULLTEXT',
-                fields: ['title', 'description']
-            }
-        ]
+            { type: 'FULLTEXT', fields: ['title', 'description'] },
+        ],
     }
 );
 

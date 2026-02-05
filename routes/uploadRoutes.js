@@ -1,12 +1,12 @@
+// routes/uploadRoutes.js
 const express = require('express');
 const router = express.Router();
-const { uploadImage } = require('../controllers/uploadController');
-const { protect, admin } = require('../middleware/auth');
-const upload = require('../middleware/uploadMiddleware');
 
-// @route   POST /api/upload
-// @desc    Upload image to Cloudinary
-// @access  Private/Admin
-router.post('/', protect, admin, upload.single('image'), uploadImage);
+const upload = require('../middleware/uploadMiddleware');
+const { protect } = require('../middleware/auth');
+const { uploadImage } = require('../controllers/uploadController');
+
+// ✅ Upload image (logged in users only)
+router.post('/', protect, upload.single('image'), uploadImage);
 
 module.exports = router;

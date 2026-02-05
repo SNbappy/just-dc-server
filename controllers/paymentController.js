@@ -1,3 +1,4 @@
+// controllers/paymentController.js
 const Payment = require('../models/Payment');
 const User = require('../models/User');
 const { Op } = require('sequelize');
@@ -36,7 +37,10 @@ const attachPopulate = async (payments) => {
 
     const [users, verifiers] = await Promise.all([
         userIds.length
-            ? User.findAll({ where: { id: { [Op.in]: userIds } }, attributes: ['id', 'name', 'email', 'studentId', 'phone'] })
+            ? User.findAll({
+                where: { id: { [Op.in]: userIds } },
+                attributes: ['id', 'name', 'email', 'studentId', 'phone']
+            })
             : [],
         verifierIds.length
             ? User.findAll({ where: { id: { [Op.in]: verifierIds } }, attributes: ['id', 'name'] })
@@ -58,18 +62,21 @@ const attachPopulate = async (payments) => {
     });
 };
 
+const isValidMonth = (month) => typeof month === 'string' && /^\d{4}-\d{2}$/.test(month);
+
 // @desc    Get all payments
 // @route   GET /api/payments
-// @access  Private/Admin/President/GS
+// @access  Private/Admin/Moderator/President/GS
 exports.getAllPayments = async (req, res) => {
     try {
-        const { type, status, month, userId } = req.query;
+        const { type, status, month, userId, year } = req.query;
 
         const where = {};
         if (type) where.type = type;
         if (status) where.status = status;
         if (month) where.month = month;
-        if (userId) where.userId = userId;
+        if (year) where.year = Number(year);
+        if (userId) where.userId = Number(userId);
 
         const payments = await Payment.findAll({
             where,
@@ -78,14 +85,14 @@ exports.getAllPayments = async (req, res) => {
 
         const data = await attachPopulate(payments);
 
-        res.status(200).json({
+        return res.status(200).json({
             success: true,
             count: data.length,
             data
         });
     } catch (error) {
         console.error('Error fetching payments:', error);
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: 'Server Error',
             error: error.message
@@ -105,14 +112,14 @@ exports.getMyPayments = async (req, res) => {
 
         const data = await attachPopulate(payments);
 
-        res.status(200).json({
+        return res.status(200).json({
             success: true,
             count: data.length,
             data
         });
     } catch (error) {
         console.error('Error fetching user payments:', error);
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: 'Server Error',
             error: error.message
@@ -128,14 +135,39 @@ exports.createPayment = async (req, res) => {
         const { amount, type, paymentMethod, transactionId, month, notes } = req.body;
 
         // Validate required fields
-        if (!amount || !type) {
+        if (amount === undefined || amount === null || !type) {
             return res.status(400).json({
                 success: false,
                 message: 'Please provide amount and payment type'
             });
         }
 
-        // Check if registration payment already exists
+        const numericAmount = Number(amount);
+        if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Amount must be a positive number'
+            });
+        }
+
+        if (!['registration', 'monthly'].includes(type)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid payment type'
+            });
+        }
+
+        // Monthly requires a valid month format
+        if (type === 'monthly') {
+            if (!month || !isValidMonth(month)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'For monthly payments, month is required in YYYY-MM format'
+                });
+            }
+        }
+
+        // Registration: allow only one active/pending/paid record
         if (type === 'registration') {
             const existingPayment = await Payment.findOne({
                 where: {
@@ -153,8 +185,8 @@ exports.createPayment = async (req, res) => {
             }
         }
 
-        // Check if monthly payment for this month already exists
-        if (type === 'monthly' && month) {
+        // Monthly: prevent duplicates for same month (pending/paid)
+        if (type === 'monthly') {
             const existingPayment = await Payment.findOne({
                 where: {
                     userId: req.user.id,
@@ -172,32 +204,32 @@ exports.createPayment = async (req, res) => {
             }
         }
 
-        const year = type === 'monthly' && month ? parseInt(month.split('-')[0], 10) : null;
-        const dueDate = type === 'monthly' && month ? new Date(`${month}-05`) : null;
+        const year = type === 'monthly' ? parseInt(month.split('-')[0], 10) : null;
+        const dueDate = type === 'monthly' ? new Date(`${month}-05T00:00:00.000Z`) : null;
 
         const payment = await Payment.create({
             userId: req.user.id,
-            amount,
+            amount: numericAmount,
             type,
-            paymentMethod,
-            transactionId,
+            paymentMethod: paymentMethod || null,
+            transactionId: transactionId || null,
             month: type === 'monthly' ? month : null,
             year: type === 'monthly' ? year : null,
             dueDate,
-            notes,
+            notes: notes || null,
             status: 'pending'
         });
 
         const data = await attachPopulate(payment);
 
-        res.status(201).json({
+        return res.status(201).json({
             success: true,
             message: 'Payment submitted successfully. Waiting for verification.',
             data
         });
     } catch (error) {
         console.error('Error creating payment:', error);
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: 'Failed to create payment',
             error: error.message
@@ -207,7 +239,7 @@ exports.createPayment = async (req, res) => {
 
 // @desc    Verify payment
 // @route   PUT /api/payments/:id/verify
-// @access  Private/Admin/President/GS
+// @access  Private/Admin/Moderator/President/GS
 exports.verifyPayment = async (req, res) => {
     try {
         const { status, notes } = req.body;
@@ -228,12 +260,20 @@ exports.verifyPayment = async (req, res) => {
             });
         }
 
+        // Prevent re-verifying already finalized payments
+        if (['paid', 'failed', 'refunded'].includes(payment.status)) {
+            return res.status(400).json({
+                success: false,
+                message: `Payment is already finalized as "${payment.status}"`
+            });
+        }
+
         await payment.update({
             status,
             verifiedBy: req.user.id,
             verifiedAt: new Date(),
-            paidAt: status === 'paid' ? new Date() : payment.paidAt,
-            notes: notes ? notes : payment.notes
+            paidAt: status === 'paid' ? new Date() : null,
+            notes: notes !== undefined ? notes : payment.notes
         });
 
         // Update user's payment status
@@ -257,14 +297,14 @@ exports.verifyPayment = async (req, res) => {
 
         const data = await attachPopulate(payment);
 
-        res.status(200).json({
+        return res.status(200).json({
             success: true,
             message: `Payment ${status === 'paid' ? 'verified' : 'rejected'} successfully`,
             data
         });
     } catch (error) {
         console.error('Error verifying payment:', error);
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: 'Failed to verify payment',
             error: error.message
@@ -274,10 +314,12 @@ exports.verifyPayment = async (req, res) => {
 
 // @desc    Get payment statistics
 // @route   GET /api/payments/stats
-// @access  Private/Admin/President/GS
+// @access  Private/Admin/Moderator/President/GS
 exports.getPaymentStats = async (req, res) => {
     try {
-        const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const startOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
         const stats = {
             totalRevenue: 0,
@@ -288,39 +330,36 @@ exports.getPaymentStats = async (req, res) => {
             overduePayments: 0
         };
 
-        // Total revenue (all paid payments)
-        const paidPayments = await Payment.findAll({ where: { status: 'paid' } });
-        stats.totalRevenue = paidPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+        // Use DB aggregates (fast)
+        const [totalRevenue, registrationRevenue, monthlyRevenue] = await Promise.all([
+            Payment.sum('amount', { where: { status: 'paid' } }),
+            Payment.sum('amount', { where: { status: 'paid', type: 'registration' } }),
+            Payment.sum('amount', { where: { status: 'paid', type: 'monthly' } })
+        ]);
 
-        // Registration revenue
-        const regPayments = await Payment.findAll({ where: { type: 'registration', status: 'paid' } });
-        stats.registrationRevenue = regPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+        stats.totalRevenue = Number(totalRevenue || 0);
+        stats.registrationRevenue = Number(registrationRevenue || 0);
+        stats.monthlyRevenue = Number(monthlyRevenue || 0);
 
-        // Monthly revenue
-        const monthlyPayments = await Payment.findAll({ where: { type: 'monthly', status: 'paid' } });
-        stats.monthlyRevenue = monthlyPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
-
-        // Pending payments
         stats.pendingPayments = await Payment.count({ where: { status: 'pending' } });
 
-        // Paid this month
+        // Paid this month based on paidAt (works for both registration + monthly)
         stats.paidThisMonth = await Payment.count({
             where: {
                 status: 'paid',
-                month: currentMonth
+                paidAt: { [Op.gte]: startOfMonth, [Op.lt]: startOfNextMonth }
             }
         });
 
-        // Overdue payments
         stats.overduePayments = await Payment.count({ where: { status: 'overdue' } });
 
-        res.status(200).json({
+        return res.status(200).json({
             success: true,
             data: stats
         });
     } catch (error) {
         console.error('Error fetching payment stats:', error);
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: 'Server Error',
             error: error.message
@@ -335,7 +374,7 @@ exports.generateMonthlyPayments = async (req, res) => {
     try {
         const { month } = req.body; // Format: YYYY-MM
 
-        if (!month) {
+        if (!month || !isValidMonth(month)) {
             return res.status(400).json({
                 success: false,
                 message: 'Please provide month in YYYY-MM format'
@@ -345,7 +384,7 @@ exports.generateMonthlyPayments = async (req, res) => {
         // Get all approved members
         const members = await User.findAll({
             where: {
-                role: { [Op.in]: ['member', 'executive_member', 'general_secretary', 'president'] },
+                role: { [Op.in]: ['member', 'executive_member', 'general_secretary', 'president', 'moderator', 'admin'] },
                 membershipStatus: 'approved',
                 isActive: true
             },
@@ -355,8 +394,10 @@ exports.generateMonthlyPayments = async (req, res) => {
         const createdPayments = [];
         const skippedUsers = [];
 
+        const year = parseInt(month.split('-')[0], 10);
+        const dueDate = new Date(`${month}-05T00:00:00.000Z`);
+
         for (const member of members) {
-            // Check if payment already exists for this month
             const existingPayment = await Payment.findOne({
                 where: {
                     userId: member.id,
@@ -371,8 +412,8 @@ exports.generateMonthlyPayments = async (req, res) => {
                     amount: 30,
                     type: 'monthly',
                     month,
-                    year: parseInt(month.split('-')[0], 10),
-                    dueDate: new Date(`${month}-05`),
+                    year,
+                    dueDate,
                     status: 'pending'
                 });
                 createdPayments.push(payment);
@@ -381,7 +422,7 @@ exports.generateMonthlyPayments = async (req, res) => {
             }
         }
 
-        res.status(201).json({
+        return res.status(201).json({
             success: true,
             message: `Monthly payments generated for ${month}`,
             data: {
@@ -392,7 +433,7 @@ exports.generateMonthlyPayments = async (req, res) => {
         });
     } catch (error) {
         console.error('Error generating monthly payments:', error);
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: 'Failed to generate monthly payments',
             error: error.message

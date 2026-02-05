@@ -1,32 +1,76 @@
+// middleware/errorHandler.js
 const errorHandler = (err, req, res, next) => {
-    let error = { ...err };
-    error.message = err.message;
+    // Default values
+    let statusCode = err.statusCode || err.status || 500;
+    let message = err.message || 'Server Error';
+    let errors = undefined;
 
-    // Log to console for dev
-    console.error(err);
+    // Log for dev
+    console.error('❌ ERROR:', err);
 
-    // Mongoose bad ObjectId
-    if (err.name === 'CastError') {
-        const message = 'Resource not found';
-        error = { message, statusCode: 404 };
+    // ✅ Sequelize Validation Error
+    if (err.name === 'SequelizeValidationError') {
+        statusCode = 400;
+        errors = err.errors?.map((e) => ({
+            field: e.path,
+            message: e.message
+        }));
+        message = errors?.[0]?.message || 'Validation error';
     }
 
-    // Mongoose duplicate key
-    if (err.code === 11000) {
-        const message = 'Duplicate field value entered';
-        error = { message, statusCode: 400 };
+    // ✅ Sequelize Unique Constraint Error
+    if (err.name === 'SequelizeUniqueConstraintError') {
+        statusCode = 400;
+        errors = err.errors?.map((e) => ({
+            field: e.path,
+            message: e.message
+        }));
+        message = 'Duplicate field value entered';
     }
 
-    // Mongoose validation error
-    if (err.name === 'ValidationError') {
-        const message = Object.values(err.errors).map(val => val.message);
-        error = { message, statusCode: 400 };
+    // ✅ Sequelize Foreign Key Constraint Error
+    if (err.name === 'SequelizeForeignKeyConstraintError') {
+        statusCode = 400;
+        message = 'Invalid reference (foreign key constraint failed)';
     }
 
-    res.status(error.statusCode || 500).json({
+    // ✅ JWT errors
+    if (err.name === 'JsonWebTokenError') {
+        statusCode = 401;
+        message = 'Not authorized, token invalid';
+    }
+    if (err.name === 'TokenExpiredError') {
+        statusCode = 401;
+        message = 'Not authorized, token expired';
+    }
+
+    // ✅ Multer errors (file upload)
+    // Multer throws errors with name "MulterError"
+    if (err.name === 'MulterError') {
+        statusCode = 400;
+        message = err.message || 'File upload error';
+    }
+
+    // ✅ Body parser JSON error (bad JSON)
+    if (err.type === 'entity.parse.failed') {
+        statusCode = 400;
+        message = 'Invalid JSON payload';
+    }
+
+    const response = {
         success: false,
-        message: error.message || 'Server Error'
-    });
+        message
+    };
+
+    // optionally include detailed validation errors
+    if (errors) response.errors = errors;
+
+    // include stack only in development
+    if ((process.env.NODE_ENV || 'development') === 'development') {
+        response.stack = err.stack;
+    }
+
+    return res.status(statusCode).json(response);
 };
 
 module.exports = errorHandler;

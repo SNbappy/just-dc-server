@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+
 const {
     getAllMembers,
     getMember,
@@ -7,16 +8,37 @@ const {
     updateMember,
     deleteMember,
 } = require('../controllers/memberController');
-const { protect, admin } = require('../middleware/auth');
+
+const { protect } = require('../middleware/auth');
+const { authorize } = require('../middleware/roleMiddleware');
 const upload = require('../middleware/uploadMiddleware');
 
 // Public routes
 router.get('/', getAllMembers);
 router.get('/:id', getMember);
 
-// Admin routes
-router.post('/', protect, admin, upload.single('image'), createMember);
-router.put('/:id', protect, admin, upload.single('image'), updateMember);
-router.delete('/:id', protect, admin, deleteMember);
+// Management routes
+router.post(
+    '/',
+    protect,
+    authorize('admin', 'president', 'general_secretary'),
+    upload.single('image'),
+    createMember
+);
+
+router.put(
+    '/:id',
+    protect,
+    authorize('admin', 'president', 'general_secretary'),
+    upload.single('image'),
+    updateMember
+);
+
+router.delete(
+    '/:id',
+    protect,
+    authorize('admin', 'president', 'general_secretary'),
+    deleteMember
+);
 
 module.exports = router;

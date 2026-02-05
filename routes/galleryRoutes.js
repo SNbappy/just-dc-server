@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+
 const {
     getAllGallery,
     getGallery,
@@ -8,17 +9,46 @@ const {
     deleteImage,
     deleteGallery,
 } = require('../controllers/galleryController');
-const { protect, admin } = require('../middleware/auth');
+
+const { protect } = require('../middleware/auth');
+const { authorize } = require('../middleware/roleMiddleware');
 const upload = require('../middleware/uploadMiddleware');
 
-// Public routes
+// ================= PUBLIC =================
 router.get('/', getAllGallery);
 router.get('/:id', getGallery);
 
-// Admin routes
-router.post('/', protect, admin, upload.array('images', 10), createGallery);
-router.put('/:id', protect, admin, upload.array('images', 10), updateGallery);
-router.delete('/:id/image/:imageId', protect, admin, deleteImage);
-router.delete('/:id', protect, admin, deleteGallery);
+// ================= MANAGEMENT =================
+// Admin / President / General Secretary only
+
+router.post(
+    '/',
+    protect,
+    authorize('admin', 'president', 'general_secretary'),
+    upload.array('images', 10),
+    createGallery
+);
+
+router.put(
+    '/:id',
+    protect,
+    authorize('admin', 'president', 'general_secretary'),
+    upload.array('images', 10),
+    updateGallery
+);
+
+router.delete(
+    '/:id/image/:imageId',
+    protect,
+    authorize('admin', 'president', 'general_secretary'),
+    deleteImage
+);
+
+router.delete(
+    '/:id',
+    protect,
+    authorize('admin', 'president', 'general_secretary'),
+    deleteGallery
+);
 
 module.exports = router;

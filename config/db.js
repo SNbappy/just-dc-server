@@ -1,3 +1,4 @@
+// config/db.js
 const { Sequelize } = require('sequelize');
 
 const sequelize = new Sequelize(
@@ -8,7 +9,7 @@ const sequelize = new Sequelize(
         host: process.env.DB_HOST,
         port: process.env.DB_PORT || 3306,
         dialect: 'mysql',
-        logging: false
+        logging: false,
     }
 );
 
@@ -22,10 +23,12 @@ const connectDB = async () => {
     }
 };
 
+// ✅ If you don’t want migrations, keep this ON (dev/staging).
+// In production, use migrations later.
 const syncDB = async () => {
     try {
         await sequelize.sync({ alter: true });
-        console.log('✅ MySQL Tables Synced');
+        console.log('✅ MySQL Tables Synced (alter:true)');
     } catch (error) {
         console.error('❌ MySQL sync failed:', error.message);
         process.exit(1);

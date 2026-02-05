@@ -1,7 +1,8 @@
+// models/Payment.js
 const { DataTypes, Model } = require('sequelize');
 const { sequelize } = require('../config/db');
 
-class Payment extends Model { }
+class Payment extends Model {}
 
 Payment.init(
     {
@@ -33,14 +34,7 @@ Payment.init(
         },
 
         paymentMethod: {
-            type: DataTypes.ENUM(
-                'bkash',
-                'nagad',
-                'rocket',
-                'bank',
-                'cash',
-                'sslcommerz'
-            ),
+            type: DataTypes.ENUM('bkash', 'nagad', 'rocket', 'bank', 'cash', 'sslcommerz'),
             allowNull: true
         },
 
@@ -49,6 +43,7 @@ Payment.init(
             allowNull: true
         },
 
+        // YYYY-MM for monthly payments
         month: {
             type: DataTypes.STRING,
             allowNull: true
@@ -91,11 +86,15 @@ Payment.init(
         timestamps: true,
 
         indexes: [
+            // Query performance
+            { fields: ['userId', 'type'] },
+            { fields: ['status'] },
+
+            // ✅ Prevent duplicate monthly per user per month/year at DB level
+            // (registration month is NULL so controller enforces that)
             {
-                fields: ['userId', 'type', 'month']
-            },
-            {
-                fields: ['status']
+                unique: true,
+                fields: ['userId', 'type', 'month', 'year']
             }
         ]
     }

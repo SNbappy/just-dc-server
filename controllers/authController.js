@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const { validationResult } = require('express-validator');
+const { Op } = require('sequelize');
 
 // Generate JWT Token
 const generateToken = (id) => {
@@ -22,10 +23,16 @@ exports.register = async (req, res) => {
             });
         }
 
-        const { name, email, phone, password } = req.body;
+        const { name, email, phone, password, department, batch, studentId } = req.body;
+
+        // normalize email like Mongo did
+        const normalizedEmail = (email || '').toLowerCase().trim();
 
         // Check if user exists
-        const userExists = await User.findOne({ where: { email } });
+        const userExists = await User.findOne({
+            where: { email: normalizedEmail }
+        });
+
         if (userExists) {
             return res.status(400).json({
                 success: false,
@@ -36,20 +43,23 @@ exports.register = async (req, res) => {
         // Create user
         const user = await User.create({
             name,
-            email,
-            phone,
-            password
+            email: normalizedEmail,
+            phone: phone || null,
+            password,
+            department: department || null,
+            batch: batch || null,
+            studentId: studentId || null
         });
 
         // Generate token
         const token = generateToken(user.id);
 
-        res.status(201).json({
+        return res.status(201).json({
             success: true,
             message: 'User registered successfully',
             token,
             user: {
-                _id: user.id, // keep _id for frontend compatibility
+                _id: user.id,
                 name: user.name,
                 email: user.email,
                 phone: user.phone,
@@ -57,7 +67,25 @@ exports.register = async (req, res) => {
             }
         });
     } catch (error) {
-        res.status(500).json({
+        console.error('REGISTER ERROR:', error); // ✅ important for you to see real reason
+
+        // Sequelize unique constraint -> show 400 instead of 500
+        if (error.name === 'SequelizeUniqueConstraintError') {
+            return res.status(400).json({
+                success: false,
+                message: 'User already exists with this email'
+            });
+        }
+
+        // Sequelize validation errors -> 400
+        if (error.name === 'SequelizeValidationError') {
+            return res.status(400).json({
+                success: false,
+                message: error.errors?.[0]?.message || 'Validation error'
+            });
+        }
+
+        return res.status(500).json({
             success: false,
             message: error.message
         });
@@ -78,9 +106,12 @@ exports.login = async (req, res) => {
         }
 
         const { email, password } = req.body;
+        const normalizedEmail = (email || '').toLowerCase().trim();
 
-        // Check for user (include password for login)
-        const user = await User.scope('withPassword').findOne({ where: { email } });
+        // ✅ must include password using scope
+        const user = await User.scope('withPassword').findOne({
+            where: { email: normalizedEmail }
+        });
 
         if (!user) {
             return res.status(401).json({
@@ -89,8 +120,8 @@ exports.login = async (req, res) => {
             });
         }
 
-        // Check if password matches
         const isMatch = await user.matchPassword(password);
+
         if (!isMatch) {
             return res.status(401).json({
                 success: false,
@@ -98,7 +129,6 @@ exports.login = async (req, res) => {
             });
         }
 
-        // Check if user is active
         if (!user.isActive) {
             return res.status(401).json({
                 success: false,
@@ -106,23 +136,14 @@ exports.login = async (req, res) => {
             });
         }
 
-        // Update lastLogin (optional, but your schema has it)
-        try {
-            user.lastLogin = new Date();
-            await user.save();
-        } catch (e) {
-            // ignore if it fails; don't block login
-        }
-
-        // Generate token
         const token = generateToken(user.id);
 
-        res.json({
+        return res.json({
             success: true,
             message: 'Login successful',
             token,
             user: {
-                _id: user.id, // keep _id for frontend compatibility
+                _id: user.id,
                 name: user.name,
                 email: user.email,
                 phone: user.phone,
@@ -131,7 +152,8 @@ exports.login = async (req, res) => {
             }
         });
     } catch (error) {
-        res.status(500).json({
+        console.error('LOGIN ERROR:', error);
+        return res.status(500).json({
             success: false,
             message: error.message
         });
@@ -145,12 +167,12 @@ exports.getMe = async (req, res) => {
     try {
         const user = await User.findByPk(req.user.id);
 
-        res.json({
+        return res.json({
             success: true,
             user
         });
     } catch (error) {
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: error.message
         });
@@ -164,34 +186,38 @@ exports.updateDetails = async (req, res) => {
     try {
         const fieldsToUpdate = {
             name: req.body.name,
-            email: req.body.email,
+            email: req.body.email ? req.body.email.toLowerCase().trim() : undefined,
             phone: req.body.phone,
             studentId: req.body.studentId,
             department: req.body.department,
             batch: req.body.batch
         };
 
-        // Remove undefined values (so they don't overwrite with NULL)
-        Object.keys(fieldsToUpdate).forEach((key) => {
-            if (fieldsToUpdate[key] === undefined) delete fieldsToUpdate[key];
-        });
+        // remove undefined keys
+        Object.keys(fieldsToUpdate).forEach((k) => fieldsToUpdate[k] === undefined && delete fieldsToUpdate[k]);
 
         const user = await User.findByPk(req.user.id);
         if (!user) {
-            return res.status(404).json({
-                success: false,
-                message: 'User not found'
-            });
+            return res.status(404).json({ success: false, message: 'User not found' });
         }
 
         await user.update(fieldsToUpdate);
 
-        res.json({
+        return res.json({
             success: true,
             user
         });
     } catch (error) {
-        res.status(500).json({
+        console.error('UPDATE DETAILS ERROR:', error);
+
+        if (error.name === 'SequelizeUniqueConstraintError') {
+            return res.status(400).json({
+                success: false,
+                message: 'Email is already in use'
+            });
+        }
+
+        return res.status(500).json({
             success: false,
             message: error.message
         });
@@ -206,13 +232,9 @@ exports.updatePassword = async (req, res) => {
         const user = await User.scope('withPassword').findByPk(req.user.id);
 
         if (!user) {
-            return res.status(404).json({
-                success: false,
-                message: 'User not found'
-            });
+            return res.status(404).json({ success: false, message: 'User not found' });
         }
 
-        // Check current password
         if (!(await user.matchPassword(req.body.currentPassword))) {
             return res.status(401).json({
                 success: false,
@@ -221,17 +243,18 @@ exports.updatePassword = async (req, res) => {
         }
 
         user.password = req.body.newPassword;
-        await user.save(); // triggers beforeUpdate hook to hash password
+        await user.save();
 
         const token = generateToken(user.id);
 
-        res.json({
+        return res.json({
             success: true,
             message: 'Password updated successfully',
             token
         });
     } catch (error) {
-        res.status(500).json({
+        console.error('UPDATE PASSWORD ERROR:', error);
+        return res.status(500).json({
             success: false,
             message: error.message
         });
