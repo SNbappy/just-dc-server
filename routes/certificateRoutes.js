@@ -9,7 +9,7 @@ const {
     getMyCertificates,
     verifyCertificate,
 } = require('../controllers/certificateController');
-const { protect, authorize } = require('../middleware/authMiddleware');
+const { protect, authorize } = require('../middleware/auth');
 
 // =====================================================
 // PUBLIC ROUTES

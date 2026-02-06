@@ -8,7 +8,7 @@ const {
     getMyRegistrations,
     cancelRegistration,
 } = require('../controllers/registrationController');
-const { protect, optionalAuth } = require('../middleware/authMiddleware');
+const { protect, optionalAuth } = require('../middleware/auth');
 
 // =====================================================
 // PUBLIC ROUTES (with optional auth)
