@@ -21,11 +21,11 @@ const {
     bulkIssueTeamCertificates,
 } = require('../controllers/eventController');
 
-const { protect } = require('../middleware/auth');
-const { optionalAuth } = require('../middleware/optionalAuth'); // ✅ FIXED
+const { protect, optionalAuth } = require('../middleware/auth');
 const { authorize, isAdminOrModerator } = require('../middleware/roleMiddleware');
 
-// ================= PUBLIC =================
+// ================= PUBLIC ROUTES =================
+
 router.get('/', getAllEvents);
 router.get('/upcoming', getUpcomingEvents);
 router.get('/:id', getEvent);
@@ -94,24 +94,34 @@ router.get('/verify-certificate/:credentialId', async (req, res) => {
 // ✅ Public registration (guest OR logged in)
 router.post('/:id/register', optionalAuth, registerForEvent);
 
-// ✅ submit payment TX (guest/user)
+// ✅ Submit payment TX (guest/user)
 router.put('/:id/registrations/:regId/payment', optionalAuth, updateRegistrationPayment);
 
-// ================= MANAGEMENT =================
-router.post('/', protect, isAdminOrModerator, createEvent);
-router.put('/:id', protect, isAdminOrModerator, updateEvent);
-router.delete('/:id', protect, authorize('admin'), deleteEvent);
+// ================= MANAGEMENT ROUTES =================
 
-// ✅ registrations list (management)
+// ✅ Create event - Management only
+router.post('/', protect, isAdminOrModerator, createEvent);
+
+// ✅ FIXED: Update event - Authorization check is INSIDE controller
+// Controller checks: creator OR admin/moderator
+router.put('/:id', protect, updateEvent);
+
+// ✅ FIXED: Delete event - Authorization check is INSIDE controller
+// Controller checks: creator OR admin/moderator/president/general_secretary
+router.delete('/:id', protect, deleteEvent); // ✅ REMOVED authorize('admin')
+
+// ✅ Registrations list (management)
 router.get('/:id/registrations', protect, isAdminOrModerator, getEventRegistrations);
 
-// ✅ CERTIFICATE MANAGEMENT - REGISTRANTS
+// ================= CERTIFICATE MANAGEMENT - REGISTRANTS =================
+
 router.post('/:id/registrations/:regId/certificate', protect, isAdminOrModerator, issueRegistrationCertificate);
 router.delete('/:id/registrations/:regId/certificate', protect, isAdminOrModerator, revokeRegistrationCertificate);
 router.post('/:id/registrations/bulk-certificate', protect, isAdminOrModerator, bulkIssueCertificates);
 router.post('/:id/registrations/bulk-revoke', protect, isAdminOrModerator, bulkRevokeCertificates);
 
-// ✅ CERTIFICATE MANAGEMENT - TEAM MEMBERS
+// ================= CERTIFICATE MANAGEMENT - TEAM MEMBERS =================
+
 router.post('/:id/team/:participantIndex/certificate', protect, isAdminOrModerator, issueTeamCertificate);
 router.delete('/:id/team/:participantIndex/certificate', protect, isAdminOrModerator, revokeTeamCertificate);
 router.post('/:id/team/bulk-certificate', protect, isAdminOrModerator, bulkIssueTeamCertificates);

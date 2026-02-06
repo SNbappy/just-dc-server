@@ -5,7 +5,9 @@ const Payment = require('../models/Payment');
 const User = require('../models/User');
 const { validationResult } = require('express-validator');
 const { Op } = require('sequelize');
-const { sendEmail, templates } = require('../services/emailService'); // ✅ ADD THIS
+const { sendEmail, templates } = require('../services/emailService');
+
+// ======================= HELPER FUNCTIONS =======================
 
 // helper: attach createdBy user
 const attachCreatedBy = async (events) => {
@@ -152,15 +154,19 @@ const sanitizeParticipants = (participants) => {
             if (p.type === 'internal') {
                 const userId = Number(p.userId);
                 if (!userId) return null;
-                return { role, type: 'internal', userId };
+                return { role, type: 'internal', userId, email: p.email || null };
             }
 
             const name = String(p.name || '').trim();
+            const email = String(p.email || '').trim();
             const designation = String(p.designation || '').trim();
             const org = String(p.org || '').trim();
 
             if (!name) return null;
-            return { role, type: 'external', name, designation, org };
+            if (!email) {
+                console.warn(`⚠️ External participant "${name}" missing email - certificate cannot be issued`);
+            }
+            return { role, type: 'external', name, email, designation, org };
         })
         .filter(Boolean);
 };
@@ -171,7 +177,9 @@ const isManagementRole = (role) => ['admin', 'moderator', 'president', 'general_
 
 // ======================= EVENTS =======================
 
-// GET /api/events
+// @desc    Get all events
+// @route   GET /api/events
+// @access  Public
 exports.getAllEvents = async (req, res) => {
     try {
         const { search, category, status } = req.query;
@@ -197,7 +205,9 @@ exports.getAllEvents = async (req, res) => {
     }
 };
 
-// GET /api/events/:id
+// @desc    Get single event
+// @route   GET /api/events/:id
+// @access  Public
 exports.getEvent = async (req, res) => {
     try {
         const event = await Event.findByPk(req.params.id);
@@ -212,7 +222,9 @@ exports.getEvent = async (req, res) => {
     }
 };
 
-// POST /api/events
+// @desc    Create event
+// @route   POST /api/events
+// @access  Private/Management
 exports.createEvent = async (req, res) => {
     try {
         const errors = validationResult(req);
@@ -231,7 +243,7 @@ exports.createEvent = async (req, res) => {
         let data = await attachCreatedBy(event);
         data = await attachParticipants(data);
 
-        // ✅ NEW: Optional event announcement email
+        // Optional event announcement email
         if (req.body.sendAnnouncement === true) {
             try {
                 const allUsers = await User.findAll({
@@ -266,11 +278,24 @@ exports.createEvent = async (req, res) => {
     }
 };
 
-// PUT /api/events/:id
+// @desc    Update event
+// @route   PUT /api/events/:id
+// @access  Private/Creator or Management
 exports.updateEvent = async (req, res) => {
     try {
         const event = await Event.findByPk(req.params.id);
         if (!event) return res.status(404).json({ success: false, message: 'Event not found' });
+
+        // Authorization check
+        const isCreator = String(event.createdBy) === String(req.user.id);
+        const canManage = isManagementRole(req.user.role);
+
+        if (!isCreator && !canManage) {
+            return res.status(403).json({
+                success: false,
+                message: 'You do not have permission to update this event',
+            });
+        }
 
         const updatePayload = { ...req.body };
         if ('participants' in req.body) updatePayload.participants = sanitizeParticipants(req.body.participants);
@@ -286,20 +311,115 @@ exports.updateEvent = async (req, res) => {
     }
 };
 
-// DELETE /api/events/:id
+// @desc    Delete event
+// @route   DELETE /api/events/:id
+// @access  Private/Creator or Management
 exports.deleteEvent = async (req, res) => {
     try {
-        const event = await Event.findByPk(req.params.id);
-        if (!event) return res.status(404).json({ success: false, message: 'Event not found' });
+        console.log('🗑️ DELETE REQUEST STARTED for Event ID:', req.params.id);
 
+        const event = await Event.findByPk(req.params.id);
+
+        if (!event) {
+            console.log('❌ Event not found');
+            return res.status(404).json({
+                success: false,
+                message: 'Event not found'
+            });
+        }
+
+        // ✅ Log debug information
+        console.log('🔍 DELETE EVENT DEBUG:');
+        console.log('Event ID:', event.id);
+        console.log('Event createdBy:', event.createdBy);
+        console.log('User ID:', req.user.id);
+        console.log('User Role:', req.user.role);
+        console.log('User Name:', req.user.name);
+
+        // Authorization check
+        const isCreator = String(event.createdBy) === String(req.user.id);
+        const canManage = isManagementRole(req.user.role);
+
+        console.log('Is Creator?', isCreator);
+        console.log('Can Manage?', canManage);
+        console.log('Management roles:', ['admin', 'moderator', 'president', 'general_secretary']);
+
+        if (!isCreator && !canManage) {
+            console.log('❌ ACCESS DENIED');
+            return res.status(403).json({
+                success: false,
+                message: 'You do not have permission to delete this event. Only the creator or management can delete events.',
+            });
+        }
+
+        console.log('✅ ACCESS GRANTED');
+
+        // ✅ ADD THIS: Check for confirmed registrations
+        console.log('🔍 Checking for confirmed registrations...');
+
+        const confirmedRegistrations = await EventRegistration.count({
+            where: {
+                eventId: event.id,
+                status: 'confirmed'
+            }
+        });
+
+        console.log(`📊 Found ${confirmedRegistrations} confirmed registration(s)`);
+
+        if (confirmedRegistrations > 0) {
+            console.log('⚠️ Cannot delete - has confirmed registrations');
+            return res.status(400).json({
+                success: false,
+                message: `Cannot delete event with ${confirmedRegistrations} confirmed registration(s). Cancel registrations first or contact admin.`,
+            });
+        }
+
+        // ✅ ADD THIS: Delete associated data
+        console.log('🗑️ Deleting associated registrations...');
+
+        const registrations = await EventRegistration.findAll({
+            where: { eventId: event.id }
+        });
+
+        console.log(`📊 Found ${registrations.length} registration(s) to delete`);
+
+        for (const reg of registrations) {
+            if (reg.paymentId) {
+                console.log(`💰 Deleting payment ID: ${reg.paymentId}`);
+                await Payment.destroy({ where: { id: reg.paymentId } });
+            }
+        }
+
+        console.log('🗑️ Deleting all registrations...');
+        await EventRegistration.destroy({ where: { eventId: event.id } });
+
+        // Delete the event
+        console.log('🗑️ Deleting event...');
         await event.destroy();
-        res.json({ success: true, message: 'Event deleted successfully' });
+
+        console.log('✅ EVENT DELETED SUCCESSFULLY');
+
+        return res.json({
+            success: true,
+            message: 'Event deleted successfully'
+        });
+
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        console.error('❌ Error deleting event:', error);
+        console.error('❌ Error stack:', error.stack);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to delete event',
+            error: error.message
+        });
     }
 };
 
-// GET /api/events/upcoming
+
+
+// @desc    Get upcoming events
+// @route   GET /api/events/upcoming
+// @access  Public
 exports.getUpcomingEvents = async (req, res) => {
     try {
         const today = new Date();
@@ -321,7 +441,9 @@ exports.getUpcomingEvents = async (req, res) => {
 
 // ======================= REGISTRATION =======================
 
-// POST /api/events/:id/register
+// @desc    Register for event
+// @route   POST /api/events/:id/register
+// @access  Public/Private
 exports.registerForEvent = async (req, res) => {
     try {
         const event = await Event.findByPk(req.params.id);
@@ -416,7 +538,9 @@ exports.registerForEvent = async (req, res) => {
     }
 };
 
-// GET /api/events/:id/registrations
+// @desc    Get event registrations
+// @route   GET /api/events/:id/registrations
+// @access  Private/Management
 exports.getEventRegistrations = async (req, res) => {
     try {
         const event = await Event.findByPk(req.params.id);
@@ -462,7 +586,9 @@ exports.getEventRegistrations = async (req, res) => {
     }
 };
 
-// PUT /api/events/:eventId/registrations/:regId/payment
+// @desc    Update registration payment
+// @route   PUT /api/events/:eventId/registrations/:regId/payment
+// @access  Private
 exports.updateRegistrationPayment = async (req, res) => {
     try {
         const { eventId, regId } = req.params;
@@ -530,7 +656,9 @@ exports.updateRegistrationPayment = async (req, res) => {
 
 // ======================= CERTIFICATE MANAGEMENT (REGISTRANTS) =======================
 
-// POST /api/events/:id/registrations/:regId/certificate
+// @desc    Issue certificate to registrant
+// @route   POST /api/events/:id/registrations/:regId/certificate
+// @access  Private/Management
 exports.issueRegistrationCertificate = async (req, res) => {
     try {
         const { id, regId } = req.params;
@@ -556,7 +684,7 @@ exports.issueRegistrationCertificate = async (req, res) => {
             certificateIssuedAt: new Date(),
         });
 
-        // ✅ NEW: Send email notification
+        // Send email notification
         try {
             const event = await Event.findByPk(id);
 
@@ -599,7 +727,6 @@ exports.issueRegistrationCertificate = async (req, res) => {
                             </div>
                             
                             <p style="color: #999; font-size: 12px; margin-top: 30px; text-align: center;">
-                                You received this email because you participated in a JUST Debate Club event.<br>
                                 JUST Debate Club © ${new Date().getFullYear()}
                             </p>
                         </div>
@@ -622,7 +749,9 @@ exports.issueRegistrationCertificate = async (req, res) => {
     }
 };
 
-// DELETE /api/events/:id/registrations/:regId/certificate
+// @desc    Revoke registrant certificate
+// @route   DELETE /api/events/:id/registrations/:regId/certificate
+// @access  Private/Management
 exports.revokeRegistrationCertificate = async (req, res) => {
     try {
         const { id, regId } = req.params;
@@ -653,7 +782,9 @@ exports.revokeRegistrationCertificate = async (req, res) => {
     }
 };
 
-// POST /api/events/:id/registrations/bulk-certificate
+// @desc    Bulk issue certificates to registrants
+// @route   POST /api/events/:id/registrations/bulk-certificate
+// @access  Private/Management
 exports.bulkIssueCertificates = async (req, res) => {
     try {
         const { id } = req.params;
@@ -685,7 +816,7 @@ exports.bulkIssueCertificates = async (req, res) => {
 
             issuedCount++;
 
-            // ✅ Send email notification
+            // Send email notification
             try {
                 await sendEmail({
                     to: reg.email,
@@ -739,7 +870,9 @@ exports.bulkIssueCertificates = async (req, res) => {
     }
 };
 
-// POST /api/events/:id/registrations/bulk-revoke
+// @desc    Bulk revoke certificates
+// @route   POST /api/events/:id/registrations/bulk-revoke
+// @access  Private/Management
 exports.bulkRevokeCertificates = async (req, res) => {
     try {
         const { id } = req.params;
@@ -776,7 +909,9 @@ exports.bulkRevokeCertificates = async (req, res) => {
 
 // ======================= CERTIFICATE MANAGEMENT (TEAM MEMBERS) =======================
 
-// POST /api/events/:id/team/:participantIndex/certificate
+// @desc    Issue certificate to team member
+// @route   POST /api/events/:id/team/:participantIndex/certificate
+// @access  Private/Management
 exports.issueTeamCertificate = async (req, res) => {
     try {
         const { id, participantIndex } = req.params;
@@ -805,7 +940,7 @@ exports.issueTeamCertificate = async (req, res) => {
         event.participants = participants;
         await event.save();
 
-        // ✅ NEW: Send email to team member if they have email
+        // Send email to team member if they have email
         try {
             let recipientEmail = null;
             let recipientName = participant.name;
@@ -816,9 +951,8 @@ exports.issueTeamCertificate = async (req, res) => {
                     recipientEmail = user.email;
                     recipientName = user.name;
                 }
-            } else if (participant.type === 'external' && participant.name) {
-                // For external, we don't have email stored, skip email
-                recipientEmail = null;
+            } else if (participant.type === 'external' && participant.email) {
+                recipientEmail = participant.email;
             }
 
             if (recipientEmail) {
@@ -879,7 +1013,9 @@ exports.issueTeamCertificate = async (req, res) => {
     }
 };
 
-// DELETE /api/events/:id/team/:participantIndex/certificate
+// @desc    Revoke team member certificate
+// @route   DELETE /api/events/:id/team/:participantIndex/certificate
+// @access  Private/Management
 exports.revokeTeamCertificate = async (req, res) => {
     try {
         const { id, participantIndex } = req.params;
@@ -920,7 +1056,9 @@ exports.revokeTeamCertificate = async (req, res) => {
     }
 };
 
-// POST /api/events/:id/team/bulk-certificate
+// @desc    Bulk issue team certificates
+// @route   POST /api/events/:id/team/bulk-certificate
+// @access  Private/Management
 exports.bulkIssueTeamCertificates = async (req, res) => {
     try {
         const { id } = req.params;
@@ -975,18 +1113,52 @@ exports.bulkIssueTeamCertificates = async (req, res) => {
                                         
                                         <div style="text-align: center; margin: 30px 0;">
                                             <a href="${process.env.CLIENT_URL}/dashboard/certificates" 
-                                               style="display: inline-block; background: #667eea; color: white; padding: 15px 40px; text-decoration: none; border-radius: 8px; font-weight: bold;">
-                                                📥 View Certificate
+                                               style="display: inline-block; background: #667eea; color: white; padding: 15px 40px; text-decoration: none; border-radius: 8px;">
+                                                View Certificate
                                             </a>
                                         </div>
                                     </div>
                                 </div>
                             `,
                         });
+
                         emailSentCount++;
                     }
                 } catch (emailError) {
-                    console.error(`❌ Failed to send team certificate to user ${p.userId}`);
+                    console.error(`Failed to send email to user ${p.userId}:`, emailError.message);
+                }
+            } else if (p.type === 'external' && p.email) {
+                try {
+                    await sendEmail({
+                        to: p.email,
+                        subject: `🎉 Your ${p.role || 'Team'} Certificate - ${event.title}`,
+                        html: `
+                            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center;">
+                                    <h1 style="color: white; margin: 0;">🎉 Certificate Issued!</h1>
+                                </div>
+                                
+                                <div style="padding: 30px; background: #f9f9f9;">
+                                    <p style="color: #333; font-size: 16px;">Hi ${p.name},</p>
+                                    
+                                    <p style="color: #666;">Your certificate as <strong>${p.role || 'team member'}</strong> for <strong>${event.title}</strong> has been issued.</p>
+                                    
+                                    <div style="background: white; padding: 20px; border-radius: 10px; margin: 20px 0;">
+                                        <p style="margin: 5px 0; color: #333;"><strong>📜 Credential ID:</strong> ${p.credentialId}</p>
+                                        <p style="margin: 5px 0; color: #333;"><strong>🎭 Role:</strong> ${p.role || 'Team Member'}</p>
+                                    </div>
+                                    
+                                    <p style="color: #999; font-size: 12px; margin-top: 30px; text-align: center;">
+                                        JUST Debate Club © ${new Date().getFullYear()}
+                                    </p>
+                                </div>
+                            </div>
+                        `,
+                    });
+
+                    emailSentCount++;
+                } catch (emailError) {
+                    console.error(`Failed to send email to ${p.email}:`, emailError.message);
                 }
             }
         }
@@ -996,7 +1168,7 @@ exports.bulkIssueTeamCertificates = async (req, res) => {
 
         return res.json({
             success: true,
-            message: `Issued ${issuedCount} certificate(s) to team members. Email sent to ${emailSentCount} member(s).`,
+            message: `Issued ${issuedCount} certificate(s). Email sent to ${emailSentCount} recipient(s).`,
             data: { issuedCount, emailSentCount },
         });
     } catch (error) {

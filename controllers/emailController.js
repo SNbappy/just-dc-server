@@ -3,6 +3,7 @@ const { sendEmail, templates } = require('../services/emailService');
 const EmailLog = require('../models/EmailLog');
 const User = require('../models/User');
 const Event = require('../models/Event');
+const EventRegistration = require('../models/EventRegistration');
 const { Op } = require('sequelize');
 
 // @desc    Send email to individual or group
@@ -10,7 +11,7 @@ const { Op } = require('sequelize');
 // @access  Private/Admin
 exports.sendEmailToMembers = async (req, res) => {
     try {
-        const { recipientType, recipients, subject, message, templateName, eventId } = req.body;
+        const { recipientType, recipients, subject, message, templateName, eventId, customEmails } = req.body;
 
         if (!subject || !message) {
             return res.status(400).json({
@@ -25,7 +26,7 @@ exports.sendEmailToMembers = async (req, res) => {
         // Determine recipients based on type
         switch (recipientType) {
             case 'individual':
-                // Single user by ID
+                // Multiple users by ID
                 if (!recipients || recipients.length === 0) {
                     return res.status(400).json({
                         success: false,
@@ -39,19 +40,25 @@ exports.sendEmailToMembers = async (req, res) => {
                 });
 
                 recipientEmails = users.map((u) => u.email);
-                recipientList = users.map((u) => ({ id: u.id, email: u.email }));
+                recipientList = users.map((u) => ({ id: u.id, name: u.name, email: u.email }));
                 break;
 
             case 'role':
-                // All users with specific role (admin, member, etc.)
-                const role = recipients[0]; // Should be 'admin', 'member', etc.
+                // All users with specific roles
+                if (!recipients || recipients.length === 0) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'No roles provided',
+                    });
+                }
+
                 const roleUsers = await User.findAll({
-                    where: { role },
+                    where: { role: { [Op.in]: recipients } },
                     attributes: ['id', 'name', 'email'],
                 });
 
                 recipientEmails = roleUsers.map((u) => u.email);
-                recipientList = roleUsers.map((u) => ({ id: u.id, email: u.email }));
+                recipientList = roleUsers.map((u) => ({ id: u.id, name: u.name, email: u.email }));
                 break;
 
             case 'all':
@@ -61,7 +68,7 @@ exports.sendEmailToMembers = async (req, res) => {
                 });
 
                 recipientEmails = allUsers.map((u) => u.email);
-                recipientList = allUsers.map((u) => ({ id: u.id, email: u.email }));
+                recipientList = allUsers.map((u) => ({ id: u.id, name: u.name, email: u.email }));
                 break;
 
             case 'event':
@@ -73,26 +80,39 @@ exports.sendEmailToMembers = async (req, res) => {
                     });
                 }
 
-                const EventRegistration = require('../models/EventRegistration');
                 const registrations = await EventRegistration.findAll({
                     where: { eventId, status: 'confirmed' },
-                    attributes: ['email'],
+                    attributes: ['name', 'email'],
                 });
 
                 recipientEmails = registrations.map((r) => r.email);
-                recipientList = registrations.map((r) => ({ email: r.email }));
+                recipientList = registrations.map((r) => ({ name: r.name, email: r.email }));
                 break;
 
             case 'custom':
-                // Custom email list
-                if (!recipients || recipients.length === 0) {
+                // ✅ Custom email addresses
+                if (!customEmails || customEmails.length === 0) {
                     return res.status(400).json({
                         success: false,
-                        message: 'No recipients provided',
+                        message: 'No custom email addresses provided',
                     });
                 }
-                recipientEmails = recipients;
-                recipientList = recipients.map((email) => ({ email }));
+
+                // Validate and clean email addresses
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                const validEmails = customEmails
+                    .map((email) => String(email).trim().toLowerCase())
+                    .filter((email) => emailRegex.test(email));
+
+                if (validEmails.length === 0) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'No valid email addresses provided',
+                    });
+                }
+
+                recipientEmails = validEmails;
+                recipientList = validEmails.map((email) => ({ email, name: 'Recipient' }));
                 break;
 
             default:
@@ -142,21 +162,21 @@ exports.sendEmailToMembers = async (req, res) => {
                     html: htmlContent,
                 });
                 successCount++;
+                console.log(`✅ Email sent to: ${email}`);
             } catch (error) {
-                console.error(`Failed to send to ${email}:`, error);
+                console.error(`❌ Failed to send to ${email}:`, error.message);
                 failedEmails.push(email);
             }
         }
 
-        // Log the email
+        // ✅ FIXED: Changed senderId to sentBy
         await EmailLog.create({
-            sentBy: req.user.id,
+            sentBy: req.user.id,  // ✅ Changed from senderId
             recipients: recipientList,
             recipientType,
             subject,
             message,
             htmlContent,
-            templateUsed: templateName || null,
             status: successCount > 0 ? 'sent' : 'failed',
             emailsSent: successCount,
             errorMessage: failedEmails.length > 0 ? `Failed: ${failedEmails.join(', ')}` : null,
@@ -164,7 +184,7 @@ exports.sendEmailToMembers = async (req, res) => {
 
         return res.json({
             success: true,
-            message: `Email sent to ${successCount} recipient(s)`,
+            message: `Email sent to ${successCount} of ${recipientEmails.length} recipient(s)`,
             data: {
                 total: recipientEmails.length,
                 sent: successCount,
@@ -173,7 +193,7 @@ exports.sendEmailToMembers = async (req, res) => {
             },
         });
     } catch (error) {
-        console.error('Error sending email:', error);
+        console.error('❌ Error sending email:', error);
         return res.status(500).json({
             success: false,
             message: 'Failed to send email',
@@ -187,7 +207,7 @@ exports.sendEmailToMembers = async (req, res) => {
 // @access  Private/Admin
 exports.getEmailLogs = async (req, res) => {
     try {
-        const { page = 1, limit = 20 } = req.query;
+        const { page = 1, limit = 50 } = req.query;
         const offset = (page - 1) * limit;
 
         const { count, rows } = await EmailLog.findAndCountAll({
@@ -196,8 +216,8 @@ exports.getEmailLogs = async (req, res) => {
             offset: parseInt(offset),
         });
 
-        // Attach sender info
-        const senderIds = [...new Set(rows.map((log) => log.sentBy))];
+        // ✅ FIXED: Changed senderId to sentBy
+        const senderIds = [...new Set(rows.map((log) => log.sentBy).filter(Boolean))];
         const senders = await User.findAll({
             where: { id: { [Op.in]: senderIds } },
             attributes: ['id', 'name', 'email'],
@@ -207,7 +227,7 @@ exports.getEmailLogs = async (req, res) => {
 
         const logs = rows.map((log) => {
             const plain = log.toJSON ? log.toJSON() : log;
-            const sender = senderMap.get(log.sentBy);
+            const sender = senderMap.get(log.sentBy);  // ✅ Changed from senderId
             return {
                 ...plain,
                 sender: sender
@@ -229,7 +249,7 @@ exports.getEmailLogs = async (req, res) => {
             data: logs,
         });
     } catch (error) {
-        console.error('Error fetching email logs:', error);
+        console.error('❌ Error fetching email logs:', error);
         return res.status(500).json({
             success: false,
             message: 'Failed to fetch email logs',
@@ -252,6 +272,7 @@ exports.getEmailLog = async (req, res) => {
             });
         }
 
+        // ✅ FIXED: Changed senderId to sentBy
         const sender = await User.findByPk(log.sentBy, {
             attributes: ['id', 'name', 'email'],
         });
@@ -272,7 +293,7 @@ exports.getEmailLog = async (req, res) => {
             },
         });
     } catch (error) {
-        console.error('Error fetching email log:', error);
+        console.error('❌ Error fetching email log:', error);
         return res.status(500).json({
             success: false,
             message: 'Failed to fetch email log',
@@ -319,16 +340,24 @@ exports.getEmailTemplates = async (req, res) => {
 exports.getRecipientGroups = async (req, res) => {
     try {
         // Count users by role
-        const adminCount = await User.count({ where: { role: 'admin' } });
-        const moderatorCount = await User.count({ where: { role: 'moderator' } });
+        const userCount = await User.count({ where: { role: 'user' } });
         const memberCount = await User.count({ where: { role: 'member' } });
+        const executiveCount = await User.count({ where: { role: 'executive_member' } });
+        const gsCount = await User.count({ where: { role: 'general_secretary' } });
+        const presidentCount = await User.count({ where: { role: 'president' } });
+        const moderatorCount = await User.count({ where: { role: 'moderator' } });
+        const adminCount = await User.count({ where: { role: 'admin' } });
         const totalCount = await User.count();
 
         const groups = [
             { value: 'all', label: 'All Members', count: totalCount },
-            { value: 'admin', label: 'Admins Only', count: adminCount },
-            { value: 'moderator', label: 'Moderators Only', count: moderatorCount },
-            { value: 'member', label: 'Members Only', count: memberCount },
+            { value: 'user', label: 'Users', count: userCount },
+            { value: 'member', label: 'Members', count: memberCount },
+            { value: 'executive_member', label: 'Executive Members', count: executiveCount },
+            { value: 'general_secretary', label: 'General Secretary', count: gsCount },
+            { value: 'president', label: 'President', count: presidentCount },
+            { value: 'moderator', label: 'Moderators', count: moderatorCount },
+            { value: 'admin', label: 'Admins', count: adminCount },
         ];
 
         return res.json({
