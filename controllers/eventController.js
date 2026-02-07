@@ -194,7 +194,10 @@ exports.getAllEvents = async (req, res) => {
         if (category) where.category = category;
         if (status) where.status = status;
 
-        const events = await Event.findAll({ where, order: [['date', 'DESC']] });
+        const events = await Event.findAll({
+            where,
+            order: [['date', 'DESC']],
+        });
 
         let data = await attachCreatedBy(events);
         data = await attachParticipants(data);
@@ -310,7 +313,6 @@ exports.updateEvent = async (req, res) => {
         res.status(500).json({ success: false, message: error.message });
     }
 };
-
 // @desc    Delete event
 // @route   DELETE /api/events/:id
 // @access  Private/Creator or Management
@@ -354,7 +356,7 @@ exports.deleteEvent = async (req, res) => {
 
         console.log('✅ ACCESS GRANTED');
 
-        // ✅ ADD THIS: Check for confirmed registrations
+        // Check for confirmed registrations
         console.log('🔍 Checking for confirmed registrations...');
 
         const confirmedRegistrations = await EventRegistration.count({
@@ -374,7 +376,7 @@ exports.deleteEvent = async (req, res) => {
             });
         }
 
-        // ✅ ADD THIS: Delete associated data
+        // Delete associated data
         console.log('🗑️ Deleting associated registrations...');
 
         const registrations = await EventRegistration.findAll({
@@ -414,8 +416,6 @@ exports.deleteEvent = async (req, res) => {
         });
     }
 };
-
-
 
 // @desc    Get upcoming events
 // @route   GET /api/events/upcoming
@@ -653,7 +653,6 @@ exports.updateRegistrationPayment = async (req, res) => {
         return res.status(500).json({ success: false, message: error.message });
     }
 };
-
 // ======================= CERTIFICATE MANAGEMENT (REGISTRANTS) =======================
 
 // @desc    Issue certificate to registrant
@@ -1087,7 +1086,7 @@ exports.bulkIssueTeamCertificates = async (req, res) => {
             p.certificateIssuedAt = new Date();
             issuedCount++;
 
-            // Send email to internal members only
+            // Send email
             if (p.type === 'internal' && p.userId) {
                 try {
                     const user = await User.findByPk(p.userId, { attributes: ['email', 'name'] });

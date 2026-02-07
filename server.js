@@ -38,7 +38,6 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Existing routes
 app.use('/api/auth', require('./routes/authRoutes'));
-app.use('/api/events', require('./routes/eventRoutes'));
 app.use('/api/members', require('./routes/memberRoutes'));
 app.use('/api/upload', require('./routes/uploadRoutes'));
 app.use('/api/gallery', require('./routes/galleryRoutes'));
@@ -46,13 +45,16 @@ app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/payments', require('./routes/paymentRoutes'));
 app.use('/api/emails', require('./routes/emailRoutes'));
 
-// ✅ NEW ROUTES - with error handling
+// ✅ REGISTRATION ROUTES - Mount BEFORE events to avoid conflict
 try {
     app.use('/api/registrations', require('./routes/registrationRoutes'));
     console.log('✅ Registration routes loaded');
 } catch (error) {
     console.error('❌ Failed to load registration routes:', error.message);
 }
+
+// ✅ EVENTS ROUTES - Mount AFTER registrations
+app.use('/api/events', require('./routes/eventRoutes'));
 
 try {
     app.use('/api/certificates', require('./routes/certificateRoutes'));

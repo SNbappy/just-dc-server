@@ -98,6 +98,8 @@ exports.getRegistrationCategories = async (req, res) => {
     try {
         const { eventId } = req.params;
 
+        console.log('📋 Fetching categories for event ID:', eventId);
+
         const event = await Event.findByPk(eventId);
 
         if (!event) {
@@ -115,6 +117,8 @@ exports.getRegistrationCategories = async (req, res) => {
         }
 
         const categories = event.registrationCategories?.categories || [];
+
+        console.log('✅ Returning', categories.length, 'categories');
 
         // Filter categories based on user access
         const availableCategories = categories.map(category => {
@@ -175,7 +179,7 @@ exports.registerForEvent = async (req, res) => {
             customFields
         } = req.body;
 
-        console.log('📝 Registration request:', { eventId, categoryId, email: email || req.user?.email });
+        console.log('📝 New registration for event', eventId, ', category', categoryId);
 
         // Find event
         const event = await Event.findByPk(eventId);
@@ -265,11 +269,10 @@ exports.registerForEvent = async (req, res) => {
             });
         }
 
-        // Check for duplicate registration
+        // ✅ FIXED: Check for duplicate registration (without categoryId)
         const existingRegistration = await EventRegistration.findOne({
             where: {
                 eventId: event.id,
-                categoryId: category.id,
                 ...(req.user ? { userId: req.user.id } : { email: primaryEmail })
             }
         });
@@ -277,7 +280,7 @@ exports.registerForEvent = async (req, res) => {
         if (existingRegistration) {
             return res.status(400).json({
                 success: false,
-                message: 'You are already registered for this category'
+                message: 'You are already registered for this event. Each email can only register once per event.'
             });
         }
 
@@ -504,11 +507,29 @@ exports.registerForEvent = async (req, res) => {
         }
 
     } catch (error) {
-        console.error('❌ Registration error:', error);
+        console.error('❌ Error creating registration:', error);
+
+        // ✅ FIXED: Handle duplicate registration error properly
+        if (error.name === 'SequelizeUniqueConstraintError') {
+            return res.status(400).json({
+                success: false,
+                message: 'You are already registered for this event. Please check your email for confirmation details or use a different email address.'
+            });
+        }
+
+        // ✅ Handle validation errors
+        if (error.name === 'SequelizeValidationError') {
+            return res.status(400).json({
+                success: false,
+                message: error.errors[0]?.message || 'Validation error'
+            });
+        }
+
+        // Handle other errors
         return res.status(500).json({
             success: false,
             message: 'Registration failed. Please try again.',
-            error: error.message
+            error: process.env.NODE_ENV === 'development' ? error.message : 'Server error'
         });
     }
 };
@@ -681,7 +702,10 @@ exports.cancelRegistration = async (req, res) => {
         }
 
         // Update registration status
-        await registration.update({ status: 'cancelled' });
+        await registration.update({ 
+            status: 'cancelled',
+            cancelledAt: new Date()
+        });
 
         // Update category capacity
         const event = await Event.findByPk(registration.eventId);

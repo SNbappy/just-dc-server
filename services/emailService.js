@@ -99,7 +99,7 @@ exports.templates = {
                         </div>
                         
                         <p style="color: #999; font-size: 12px; margin-top: 30px;">
-                            You received this email because you are a member of JUST Debate Club.
+                            Sent from JUST Debate Club official website.
                         </p>
                     </div>
                 </div>

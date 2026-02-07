@@ -182,6 +182,12 @@ exports.getMe = async (req, res) => {
 // @desc    Update user details
 // @route   PUT /api/auth/updatedetails
 // @access  Private
+// @desc    Update user details
+// @route   PUT /api/auth/updatedetails
+// @access  Private
+// @desc    Update user details
+// @route   PUT /api/auth/updatedetails
+// @access  Private
 exports.updateDetails = async (req, res) => {
     try {
         const fieldsToUpdate = {
@@ -190,7 +196,8 @@ exports.updateDetails = async (req, res) => {
             phone: req.body.phone,
             studentId: req.body.studentId,
             department: req.body.department,
-            batch: req.body.batch
+            batch: req.body.batch,
+            avatar: req.body.avatar
         };
 
         // remove undefined keys
@@ -223,6 +230,8 @@ exports.updateDetails = async (req, res) => {
         });
     }
 };
+
+
 
 // @desc    Update password
 // @route   PUT /api/auth/updatepassword

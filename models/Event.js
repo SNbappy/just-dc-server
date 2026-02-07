@@ -35,7 +35,13 @@ Event.init(
         },
 
         maxParticipants: { type: DataTypes.INTEGER, allowNull: true, defaultValue: null },
-        image: { type: DataTypes.STRING, allowNull: true, defaultValue: null },
+
+        // Legacy image field (keep for backward compatibility)
+        image: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            defaultValue: null,
+        },
 
         status: {
             type: DataTypes.ENUM('upcoming', 'ongoing', 'completed', 'cancelled'),
@@ -87,6 +93,15 @@ Event.init(
             comment: 'Maximum team members (including captain)',
         },
 
+        // ✅ NEW: Registration categories for this event
+        // Example: [{ name, type, price, capacity, accessType, teamMin, teamMax }]
+        categories: {
+            type: DataTypes.JSON,
+            allowNull: false,
+            defaultValue: [],
+            comment: 'Registration categories (Debater, Adjudicator, etc.)',
+        },
+
         // ✅ UPDATED: Team members structure
         // Structure: [
         //   {
@@ -106,7 +121,8 @@ Event.init(
             type: DataTypes.JSON,
             allowNull: false,
             defaultValue: [],
-            comment: 'Event team members (organizers, volunteers, speakers, etc.) - MUST include email for certificates',
+            comment:
+                'Event team members (organizers, volunteers, speakers, etc.) - MUST include email for certificates',
         },
 
         // ✅ NEW: Event format/rules
@@ -131,13 +147,6 @@ Event.init(
             allowNull: true,
             defaultValue: null,
             comment: 'Main banner/cover image for the event',
-        },
-
-        // Legacy image field (keep for backward compatibility)
-        image: {
-            type: DataTypes.STRING,
-            allowNull: true,
-            defaultValue: null,
         },
 
         // ✅ NEW: Event highlights/achievements

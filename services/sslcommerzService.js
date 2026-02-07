@@ -2,9 +2,12 @@
 const SSLCommerzPayment = require('sslcommerz-lts');
 const Payment = require('../models/Payment');
 const EventRegistration = require('../models/EventRegistration');
+const Event = require('../models/Event');
+const { sendEmail, templates } = require('./emailService');
+const { generateRegistrationReceipt } = require('./pdfService');
 
-const store_id = process.env.SSL_STORE_ID;
-const store_passwd = process.env.SSL_STORE_PASSWORD;
+const store_id = process.env.SSL_STORE_ID || process.env.SSLCOMMERZ_STORE_ID;
+const store_passwd = process.env.SSL_STORE_PASSWORD || process.env.SSLCOMMERZ_STORE_PASSWORD;
 const is_live = process.env.NODE_ENV === 'production'; // true for live, false for sandbox
 
 /**
@@ -20,19 +23,21 @@ exports.initPayment = async (paymentData) => {
         customerEmail,
         customerPhone,
         productName,
-        registrationId,
-        eventId,
-        userId
+        registrationId = '',
+        eventId = '',
+        userId = ''
     } = paymentData;
 
+    const serverUrl = process.env.SERVER_URL || process.env.BACKEND_URL || 'http://localhost:5000';
+
     const data = {
-        total_amount: amount,
+        total_amount: parseFloat(amount),
         currency: 'BDT',
         tran_id: transactionId, // use unique tran_id for each api call
-        success_url: `${process.env.BACKEND_URL}/api/sslcommerz/success`,
-        fail_url: `${process.env.BACKEND_URL}/api/sslcommerz/fail`,
-        cancel_url: `${process.env.BACKEND_URL}/api/sslcommerz/cancel`,
-        ipn_url: `${process.env.BACKEND_URL}/api/sslcommerz/ipn`,
+        success_url: `${serverUrl}/api/sslcommerz/success`,
+        fail_url: `${serverUrl}/api/sslcommerz/fail`,
+        cancel_url: `${serverUrl}/api/sslcommerz/cancel`,
+        ipn_url: `${serverUrl}/api/sslcommerz/ipn`,
         shipping_method: 'NO',
         product_name: productName,
         product_category: 'Event Registration',
@@ -57,6 +62,7 @@ exports.initPayment = async (paymentData) => {
         value_a: registrationId, // Registration ID
         value_b: eventId, // Event ID
         value_c: userId || 'guest', // User ID or 'guest'
+        multi_card_name: 'mastercard,visacard,amexcard,bkash,nagad,rocket',
     };
 
     const sslcz = new SSLCommerzPayment(store_id, store_passwd, is_live);
@@ -146,44 +152,58 @@ exports.handleSuccess = async (paymentData) => {
 
         // Update payment
         await payment.update({
-            status: 'paid',
-            paymentMethod: 'sslcommerz',
-            sslTransactionId: val_id,
-            bankTransactionId: bank_tran_id,
-            cardType: card_type,
-            cardBrand: card_brand,
+            status: 'completed',
+            paymentMethod: card_type || 'sslcommerz',
             paidAt: new Date(),
-            ipnData: paymentData
+            notes: `Bank TXN: ${bank_tran_id}, Card: ${card_brand}`,
         });
 
         // Update registration status
         const registration = await EventRegistration.findOne({
-            where: {
-                registrationId: registrationId,
-                eventId: eventId
-            }
+            where: { registrationId: registrationId },
+            include: [{ model: Event, as: 'event' }]
         });
 
         if (registration) {
             await registration.update({
                 status: 'confirmed',
+                confirmedAt: new Date(),
                 paymentId: payment.id
             });
 
-            // If team registration, update all team members
-            if (registration.registrationType === 'team' && registration.teamId) {
-                await EventRegistration.update(
-                    { status: 'confirmed' },
-                    {
-                        where: {
-                            teamId: registration.teamId,
-                            eventId: eventId
-                        }
-                    }
-                );
-            }
+            // Generate PDF receipt
+            try {
+                const pdfResult = await generateRegistrationReceipt({
+                    registration,
+                    event: registration.event,
+                    payment
+                });
 
-            console.log('✅ Payment successful and registration confirmed:', registrationId);
+                await registration.update({
+                    pdfReceiptUrl: pdfResult.url
+                });
+
+                // Send confirmation email
+                const emailTemplate = templates.registrationConfirmation(
+                    registration,
+                    registration.event,
+                    payment
+                );
+
+                await sendEmail({
+                    to: registration.email,
+                    subject: emailTemplate.subject,
+                    html: emailTemplate.html,
+                    attachments: [{
+                        filename: pdfResult.filename,
+                        path: pdfResult.filepath
+                    }]
+                });
+
+                console.log('✅ Payment confirmed, PDF & email sent:', registrationId);
+            } catch (error) {
+                console.error('❌ PDF/Email error (payment still successful):', error);
+            }
         }
 
         return {
@@ -212,7 +232,7 @@ exports.handleFailure = async (paymentData) => {
         if (payment) {
             await payment.update({
                 status: 'failed',
-                ipnData: paymentData
+                notes: 'Payment failed via SSLCommerz'
             });
 
             console.log('❌ Payment failed:', tran_id);
@@ -238,9 +258,8 @@ exports.handleCancel = async (paymentData) => {
 
         if (payment) {
             await payment.update({
-                status: 'pending', // Keep as pending so user can retry
-                notes: 'Payment cancelled by user',
-                ipnData: paymentData
+                status: 'cancelled',
+                notes: 'Payment cancelled by user'
             });
 
             console.log('⚠️ Payment cancelled:', tran_id);
@@ -314,3 +333,5 @@ exports.queryTransaction = async (tran_id) => {
         throw error;
     }
 };
+
+module.exports = exports;

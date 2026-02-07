@@ -12,6 +12,14 @@ EventRegistration.init(
             primaryKey: true,
         },
 
+        // ✅ NEW: Public registration ID
+        registrationId: {
+            type: DataTypes.STRING,
+            unique: true,
+            allowNull: false,
+            comment: 'Public-facing registration ID (e.g., REG-xxx)',
+        },
+
         eventId: {
             type: DataTypes.INTEGER.UNSIGNED,
             allowNull: false,
@@ -24,14 +32,32 @@ EventRegistration.init(
             defaultValue: null,
         },
 
-        // ✅ NEW: Registration type (individual or team)
+        // ✅ Category Info
+        categoryId: {
+            type: DataTypes.STRING,
+            allowNull: false,
+            comment: 'Category ID from event.registrationCategories',
+        },
+
+        categoryName: {
+            type: DataTypes.STRING,
+            allowNull: false,
+        },
+
+        // ✅ Source tracking
+        source: {
+            type: DataTypes.ENUM('public', 'admin'),
+            defaultValue: 'public',
+        },
+
+        // ✅ Registration type (individual or team)
         registrationType: {
             type: DataTypes.ENUM('individual', 'team'),
             allowNull: false,
             defaultValue: 'individual',
         },
 
-        // ✅ NEW: Team information (for debate teams)
+        // ✅ Team information (for debate teams)
         teamName: {
             type: DataTypes.STRING,
             allowNull: true,
@@ -39,7 +65,7 @@ EventRegistration.init(
             comment: 'Name of the debate team (if registrationType is team)',
         },
 
-        // ✅ NEW: Team members array (for team registrations)
+        // ✅ Team members array (for team registrations)
         teamMembers: {
             type: DataTypes.JSON,
             allowNull: true,
@@ -100,24 +126,24 @@ EventRegistration.init(
             defaultValue: null,
         },
 
-        // ✅ NEW: Participant role (for individual registrations)
-        participantRole: {
-            type: DataTypes.ENUM('debater', 'adjudicator', 'observer', 'volunteer', 'other'),
+        // ✅ Custom Fields
+        customFieldsData: {
+            type: DataTypes.JSON,
             allowNull: true,
-            defaultValue: 'debater',
-            comment: 'Role of the participant (mainly for individual registrations)',
+            defaultValue: null,
+            comment: 'Dynamic custom field responses',
         },
 
         // fee snapshot
         amount: {
-            type: DataTypes.INTEGER,
+            type: DataTypes.DECIMAL(10, 2),
             allowNull: false,
             defaultValue: 0,
         },
 
         // registration flow
         status: {
-            type: DataTypes.ENUM('pending_payment', 'confirmed', 'cancelled'),
+            type: DataTypes.ENUM('pending_payment', 'confirmed', 'cancelled', 'waitlisted', 'rejected'),
             allowNull: false,
             defaultValue: 'pending_payment',
         },
@@ -136,8 +162,22 @@ EventRegistration.init(
             defaultValue: 'unknown',
         },
 
-        // ✅ UPDATED: Certificate for primary registrant only
-        // For team registrations, each team member gets individual certificates
+        // ✅ Guest Tracking
+        verificationToken: {
+            type: DataTypes.TEXT,
+            allowNull: true,
+            defaultValue: null,
+            comment: 'JWT token for guest registration tracking',
+        },
+
+        // ✅ PDF Receipt
+        pdfReceiptUrl: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            defaultValue: null,
+        },
+
+        // ✅ Certificate tracking
         certificateIssued: {
             type: DataTypes.BOOLEAN,
             allowNull: false,
@@ -164,7 +204,7 @@ EventRegistration.init(
             defaultValue: null,
         },
 
-        // ✅ NEW: Additional metadata
+        // ✅ Additional metadata
         notes: {
             type: DataTypes.TEXT,
             allowNull: true,
@@ -172,12 +212,25 @@ EventRegistration.init(
             comment: 'Admin notes or special requests',
         },
 
-        // ✅ NEW: Achievement/award tracking
+        // ✅ Achievement/award tracking
         achievement: {
             type: DataTypes.STRING,
             allowNull: true,
             defaultValue: null,
             comment: 'e.g., Winner, Runner-up, Best Speaker, etc.',
+        },
+
+        // ✅ Timestamps
+        confirmedAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            defaultValue: null,
+        },
+
+        cancelledAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            defaultValue: null,
         },
     },
     {
@@ -192,37 +245,11 @@ EventRegistration.init(
             { fields: ['paymentId'] },
             { fields: ['registrationType'] },
             { fields: ['status'] },
-
-            // ✅ Prevent duplicate email per event (guest or internal snapshot)
-            { unique: true, fields: ['eventId', 'email'], name: 'unique_event_email' },
-
-            // ✅ Prevent duplicate logged-in user per event
-            // MySQL allows multiple NULLs, so guests won't conflict here.
-            { unique: true, fields: ['eventId', 'userId'], name: 'unique_event_user' },
+            { fields: ['registrationId'], unique: true },
+            { fields: ['categoryId'] },
         ],
     }
 );
-
-// ✅ ASSOCIATIONS
-EventRegistration.associate = function (models) {
-    // EventRegistration belongs to Event
-    EventRegistration.belongsTo(models.Event, {
-        foreignKey: 'eventId',
-        as: 'event',
-    });
-
-    // EventRegistration belongs to User
-    EventRegistration.belongsTo(models.User, {
-        foreignKey: 'userId',
-        as: 'user',
-    });
-
-    // EventRegistration belongs to Payment
-    EventRegistration.belongsTo(models.Payment, {
-        foreignKey: 'paymentId',
-        as: 'payment',
-    });
-};
 
 // ✅ INSTANCE METHODS
 
